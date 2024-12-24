@@ -1,5 +1,8 @@
 mod traits;
 
+#[cfg(test)]
+mod test;
+
 use std::{fmt::Debug, marker::PhantomData};
 
 macro_rules! impl_from_bits {
@@ -18,22 +21,6 @@ macro_rules! impl_from_bits {
             }
         }
     };
-}
-
-impl_from_bits! {
-    pub enum Opcode {
-        Load = 0b000_0011,
-        Store = 0b010_0011,
-        IntReg = 0b011_0011,
-        IntImm = 0b001_0011,
-        Lui = 0b011_0111,
-        Auipc = 0b001_0111,
-        Jal = 0b110_1111,
-        Jalr = 0b110_0111,
-        Branch = 0b110_0011,
-        Fence = 0b000_1111,
-        Ecall = 0b111_0011,
-    }
 }
 
 impl_from_bits!(
@@ -171,12 +158,6 @@ impl<T, U> SType<T, U> {
 }
 
 impl<T> SType<T, SImm> {
-    pub const fn unsigned_imm(&self) -> u32 {
-        let hi = self.0 >> 25;
-        let lo = (self.0 >> 7) & 0b1_1111;
-        (hi << 5) | lo
-    }
-
     pub const fn signed_imm(&self) -> i32 {
         let hi = (self.0 as i32) >> 25;
         let lo = (self.0 as i32 >> 7) & 0b1_1111;
@@ -185,30 +166,15 @@ impl<T> SType<T, SImm> {
 }
 
 impl<T> SType<T, BImm> {
-    pub const fn unsigned_imm(&self) -> u32 {
-        let sign = (self.0 >> 31) & 0b1; // imm[12]
-        let imm_11 = (self.0 >> 7) & 0b1; // imm[11]
-        let imm_4_1 = (self.0 >> 8) & 0xF; // imm[4:1]
-        let imm_10_5 = (self.0 >> 25) & 0x3F; // imm[10:5]
-
-        (sign << 12) | (imm_11 << 11) | (imm_10_5 << 5) | imm_4_1
-    }
-
     pub const fn signed_imm(&self) -> i32 {
-        let sign = ((self.0 as i32 >> 31) & 0b1) as u32; // imm[12]
-        let imm_11 = (self.0 >> 7) & 0b1; // imm[11]
-        let imm_4_1 = (self.0 >> 8) & 0xF; // imm[4:1]
-        let imm_10_5 = (self.0 >> 25) & 0x3F; // imm[10:5]
-
-        ((sign << 12) | (imm_11 << 11) | (imm_10_5 << 5) | imm_4_1) as i32
+        let hi = ((self.0 & 0x8000_0000) as i32 >> 19) as u32;
+        (hi | ((self.0 & 0x7e00_0000) >> 20)
+            | ((self.0 & 0x0000_0f00) >> 7)
+            | ((self.0 & 0x0000_0080) << 4)) as i32
     }
 }
 
 impl<T> SType<T, LImm> {
-    pub const fn unsigned_imm(&self) -> u32 {
-        self.0 >> 20
-    }
-
     pub const fn signed_imm(&self) -> i32 {
         self.0 as i32 >> 20
     }
@@ -258,22 +224,11 @@ impl UType<UImm> {
 }
 
 impl UType<JImm> {
-    pub const fn unsigned_imm(&self) -> u32 {
-        let sign = self.0 >> 31; // imm[20]
-        let imm_19_12 = (self.0 >> 12) & 0xFF; // imm[19:12]
-        let imm_11 = (self.0 >> 20) & 0b1; // imm[11]
-        let imm_10_0 = (self.0 >> 20) & 0b111_1111_1110; // imm[10:0]
-
-        (sign << 21) | (imm_19_12 << 13) | (imm_11 << 12) | imm_10_0
-    }
-
     pub const fn signed_imm(&self) -> i32 {
-        let sign = (self.0 as i32 >> 31) as u32; // imm[20]
-        let imm_19_12 = (self.0 >> 12) & 0xFF; // imm[19:12]
-        let imm_11 = (self.0 >> 20) & 0b1; // imm[11]
-        let imm_10_0 = (self.0 >> 20) & 0b111_1111_1110; // imm[10:0]
-
-        ((sign << 21) | (imm_19_12 << 13) | (imm_11 << 12) | imm_10_0) as i32
+        let hi = ((self.0 & 0x8000_0000) as i32 >> 11) as u32;
+        (hi | ((self.0 & 0x7fe0_0000) >> 20)
+            | ((self.0 & 0x0010_0000) >> 9)
+            | (self.0 & 0x000f_f000)) as i32
     }
 }
 
