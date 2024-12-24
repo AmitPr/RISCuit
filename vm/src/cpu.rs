@@ -54,19 +54,16 @@ impl Cpu {
                 let a = self.get_reg(inst.rs1());
                 let b = inst.signed_imm();
 
-                let res = match inst.funct3().expect("Invalid funct3") {
-                    IntImmFunc3::Addi => a.wrapping_add_signed(b),
-                    IntImmFunc3::Slti => ((a as i32) < b) as u32,
-                    IntImmFunc3::Sltiu => (a < (b as u32)) as u32,
-                    IntImmFunc3::Xori => a ^ (b as u32),
-                    IntImmFunc3::Ori => a | (b as u32),
-                    IntImmFunc3::Andi => a & (b as u32),
-                    IntImmFunc3::Slli => a << inst.shamt(),
-                    IntImmFunc3::SrliSrai => match inst.funct7() {
-                        0 => a >> inst.shamt(),
-                        0b0100000 => (a as i32 >> inst.shamt()) as u32,
-                        _ => panic!("Invalid funct7: {:08x}", inst.funct7()),
-                    },
+                let res = match inst.op().expect("Invalid funct3") {
+                    IntImmOp::Addi => a.wrapping_add_signed(b),
+                    IntImmOp::Slti => ((a as i32) < b) as u32,
+                    IntImmOp::Sltiu => (a < (b as u32)) as u32,
+                    IntImmOp::Xori => a ^ (b as u32),
+                    IntImmOp::Ori => a | (b as u32),
+                    IntImmOp::Andi => a & (b as u32),
+                    IntImmOp::Slli => a << inst.shamt(),
+                    IntImmOp::Srai => (a as i32 >> inst.shamt()) as u32,
+                    IntImmOp::Srli => a >> inst.shamt(),
                 };
 
                 self.set_reg(inst.rd(), res);
@@ -85,23 +82,18 @@ impl Cpu {
                 let a = self.get_reg(inst.rs1());
                 let b = self.get_reg(inst.rs2());
 
-                let res = match inst.funct3().expect("Invalid funct3") {
-                    IntRegFunc3::AddSub => match inst.funct7() {
-                        0 => a.wrapping_add(b),
-                        0b0100000 => a.wrapping_sub(b),
-                        _ => panic!("Invalid funct7: {:08x}", inst.funct7()),
-                    },
-                    IntRegFunc3::Slt => ((a as i32) < (b as i32)) as u32,
-                    IntRegFunc3::Sltu => (a < b) as u32,
-                    IntRegFunc3::Sll => a << (b & 0x1f),
-                    IntRegFunc3::SrlSra => match inst.funct7() {
-                        0 => a >> (b & 0x1f),
-                        0b0100000 => (a as i32 >> (b & 0x1f)) as u32,
-                        _ => panic!("Invalid funct7: {:08x}", inst.funct7()),
-                    },
-                    IntRegFunc3::Xor => a ^ b,
-                    IntRegFunc3::Or => a | b,
-                    IntRegFunc3::And => a & b,
+                let res = match inst.op().expect("Invalid funct3") {
+                    IntRegOp::Add => a.wrapping_add(b),
+                    IntRegOp::Sub => a.wrapping_sub(b),
+                    IntRegOp::Slt => ((a as i32) < (b as i32)) as u32,
+                    IntRegOp::Sltu => (a < b) as u32,
+                    IntRegOp::Sll => a << (b & 0x1f),
+                    IntRegOp::Srl => a >> (b & 0x1f),
+                    IntRegOp::Sra => (a as i32 >> (b & 0x1f)) as u32,
+                    IntRegOp::Xor => a ^ b,
+                    IntRegOp::Or => a | b,
+                    IntRegOp::And => a & b,
+                    _ => todo!("rv32m"),
                 };
 
                 self.set_reg(inst.rd(), res);
@@ -123,13 +115,13 @@ impl Cpu {
                 let a = self.get_reg(inst.rs1());
                 let b = self.get_reg(inst.rs2());
 
-                let taken = match inst.funct3().expect("Invalid funct3") {
-                    BranchFunc3::Beq => a == b,
-                    BranchFunc3::Bne => a != b,
-                    BranchFunc3::Blt => (a as i32) < (b as i32),
-                    BranchFunc3::Bge => (a as i32) >= (b as i32),
-                    BranchFunc3::Bltu => a < b,
-                    BranchFunc3::Bgeu => a >= b,
+                let taken = match inst.op().expect("Invalid funct3") {
+                    BranchOp::Beq => a == b,
+                    BranchOp::Bne => a != b,
+                    BranchOp::Blt => (a as i32) < (b as i32),
+                    BranchOp::Bge => (a as i32) >= (b as i32),
+                    BranchOp::Bltu => a < b,
+                    BranchOp::Bgeu => a >= b,
                 };
 
                 if taken {
@@ -142,12 +134,12 @@ impl Cpu {
                 let base = self.get_reg(inst.rs1());
                 let src = base.wrapping_add_signed(inst.signed_imm());
 
-                let res = match inst.funct3().expect("Invalid funct3") {
-                    LoadStoreFunc3::IByte => self.mem.load_byte(src) as i8 as i32 as u32,
-                    LoadStoreFunc3::IHalf => self.mem.load_half(src) as i16 as i32 as u32,
-                    LoadStoreFunc3::UByte => self.mem.load_byte(src) as u32,
-                    LoadStoreFunc3::UHalf => self.mem.load_half(src) as u32,
-                    LoadStoreFunc3::IWord | LoadStoreFunc3::UWord => self.mem.load_word(src),
+                let res = match inst.op().expect("Invalid funct3") {
+                    LoadSize::IByte => self.mem.load_byte(src) as i8 as i32 as u32,
+                    LoadSize::IHalf => self.mem.load_half(src) as i16 as i32 as u32,
+                    LoadSize::UByte => self.mem.load_byte(src) as u32,
+                    LoadSize::UHalf => self.mem.load_half(src) as u32,
+                    LoadSize::IWord | LoadSize::UWord => self.mem.load_word(src),
                 };
 
                 self.set_reg(inst.rd(), res);
@@ -158,11 +150,10 @@ impl Cpu {
                 let dest = base.wrapping_add_signed(inst.signed_imm());
                 let src = self.get_reg(inst.rs2());
 
-                match inst.funct3().expect("Invalid funct3") {
-                    LoadStoreFunc3::IByte => self.mem.store_byte(dest, src as u8),
-                    LoadStoreFunc3::IHalf => self.mem.store_half(dest, src as u16),
-                    LoadStoreFunc3::IWord => self.mem.store_word(dest, src),
-                    _ => panic!("Invalid funct3"),
+                match inst.op().expect("Invalid funct3") {
+                    StoreSize::Byte => self.mem.store_byte(dest, src as u8),
+                    StoreSize::Half => self.mem.store_half(dest, src as u16),
+                    StoreSize::Word => self.mem.store_word(dest, src),
                 }
 
                 self.pc = self.pc.wrapping_add(4);

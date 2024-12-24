@@ -4,4 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+default = ["rv32m"]
 rv64i = []
+rv32m = []

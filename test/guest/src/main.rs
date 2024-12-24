@@ -7,7 +7,7 @@ use core::arch::asm;
 pub extern "C" fn _start() -> ! {
     print_str("Hello from no_std!\n\0");
     // test branching
-    if pc() & 1 == 1 {
+    if pc() & 1 == 0 {
         print_str("PC is even\n\0");
     } else {
         print_str("PC is odd\n\0");

@@ -79,10 +79,10 @@ fn test_branches() {
     let inst = Instruction::decode(0x10e78463).unwrap();
     match inst {
         Branch(stype) => {
-            let branch_inst = SType::<BranchFunc3, BImm>(stype.0, PhantomData);
+            let branch_inst = SType::<BranchOp, BImm>(stype.0, PhantomData);
             assert_eq!(branch_inst.rs1(), 15); // x15
             assert_eq!(branch_inst.rs2(), 14); // x14
-            assert_eq!(branch_inst.funct3(), Some(BranchFunc3::Beq));
+            assert_eq!(branch_inst.op(), Some(BranchOp::Beq));
             assert_eq!(branch_inst.signed_imm(), 264);
         }
         _ => panic!("Wrong instruction type"),
@@ -92,10 +92,10 @@ fn test_branches() {
     let inst = Instruction::decode(0xfe5210e3).unwrap();
     match inst {
         Branch(stype) => {
-            let branch_inst = SType::<BranchFunc3, BImm>(stype.0, PhantomData);
+            let branch_inst = SType::<BranchOp, BImm>(stype.0, PhantomData);
             assert_eq!(branch_inst.rs1(), 4); // x4
             assert_eq!(branch_inst.rs2(), 5); // x5
-            assert_eq!(branch_inst.funct3(), Some(BranchFunc3::Bne));
+            assert_eq!(branch_inst.op(), Some(BranchOp::Bne));
             assert_eq!(branch_inst.signed_imm(), -32);
         }
         _ => panic!("Wrong instruction type"),
@@ -108,10 +108,10 @@ fn test_loads() {
     let inst = Instruction::decode(0x02008283).unwrap();
     match inst {
         Load(stype) => {
-            let load_inst = SType::<LoadStoreFunc3, LImm>(stype.0, PhantomData);
+            let load_inst = SType::<LoadSize, LImm>(stype.0, PhantomData);
             assert_eq!(load_inst.rd(), 5); // x5
             assert_eq!(load_inst.rs1(), 1); // x1
-            assert_eq!(load_inst.funct3(), Some(LoadStoreFunc3::IByte));
+            assert_eq!(load_inst.op(), Some(LoadSize::IByte));
             assert_eq!(load_inst.signed_imm(), 32);
         }
         _ => panic!("Wrong instruction type"),
@@ -121,10 +121,10 @@ fn test_loads() {
     let inst = Instruction::decode(0x0060df03).unwrap();
     match inst {
         Load(stype) => {
-            let load_inst = SType::<LoadStoreFunc3, LImm>(stype.0, PhantomData);
+            let load_inst = SType::<LoadSize, LImm>(stype.0, PhantomData);
             assert_eq!(load_inst.rd(), 30); // x30
             assert_eq!(load_inst.rs1(), 1); // x1
-            assert_eq!(load_inst.funct3(), Some(LoadStoreFunc3::UHalf));
+            assert_eq!(load_inst.op(), Some(LoadSize::UHalf));
             assert_eq!(load_inst.signed_imm(), 6);
         }
         _ => panic!("Wrong instruction type"),
@@ -137,10 +137,10 @@ fn test_stores() {
     let inst = Instruction::decode(0x00e78023).unwrap();
     match inst {
         Store(stype) => {
-            let store_inst = SType::<LoadStoreFunc3, SImm>(stype.0, PhantomData);
+            let store_inst = SType::<StoreSize, SImm>(stype.0, PhantomData);
             assert_eq!(store_inst.rs1(), 15); // x15
             assert_eq!(store_inst.rs2(), 14); // x14 (source register)
-            assert_eq!(store_inst.funct3(), Some(LoadStoreFunc3::IByte));
+            assert_eq!(store_inst.op(), Some(StoreSize::Byte));
             assert_eq!(store_inst.signed_imm(), 0);
         }
         _ => panic!("Wrong instruction type"),
@@ -150,10 +150,10 @@ fn test_stores() {
     let inst = Instruction::decode(0xfe209d23).unwrap();
     match inst {
         Store(stype) => {
-            let store_inst = SType::<LoadStoreFunc3, SImm>(stype.0, PhantomData);
+            let store_inst = SType::<StoreSize, SImm>(stype.0, PhantomData);
             assert_eq!(store_inst.rs1(), 1); // x1
             assert_eq!(store_inst.rs2(), 2); // x2 (source register)
-            assert_eq!(store_inst.funct3(), Some(LoadStoreFunc3::IHalf));
+            assert_eq!(store_inst.op(), Some(StoreSize::Half));
             assert_eq!(store_inst.signed_imm(), -6);
         }
         _ => panic!("Wrong instruction type"),
@@ -168,7 +168,7 @@ fn test_immediate_arithmetic() {
         IntImm(itype) => {
             assert_eq!(itype.rd(), 15); // x15
             assert_eq!(itype.rs1(), 0); // x0
-            assert_eq!(itype.funct3(), Some(IntImmFunc3::Addi));
+            assert_eq!(itype.op(), Some(IntImmOp::Addi));
             assert_eq!(itype.signed_imm(), 2);
         }
         _ => panic!("Wrong instruction type"),
@@ -180,7 +180,7 @@ fn test_immediate_arithmetic() {
         IntImm(itype) => {
             assert_eq!(itype.rd(), 16); // x16
             assert_eq!(itype.rs1(), 16); // x16
-            assert_eq!(itype.funct3(), Some(IntImmFunc3::Slli));
+            assert_eq!(itype.op(), Some(IntImmOp::Slli));
             assert_eq!(itype.shamt(), 3); // shift amount
         }
         _ => panic!("Wrong instruction type"),
@@ -192,7 +192,7 @@ fn test_immediate_arithmetic() {
         IntImm(itype) => {
             assert_eq!(itype.rd(), 13); // x13
             assert_eq!(itype.rs1(), 13); // x13
-            assert_eq!(itype.funct3(), Some(IntImmFunc3::Xori));
+            assert_eq!(itype.op(), Some(IntImmOp::Xori));
             assert_eq!(itype.signed_imm(), -1);
         }
         _ => panic!("Wrong instruction type"),
@@ -208,7 +208,7 @@ fn test_register_arithmetic() {
             assert_eq!(rtype.rd(), 12); // x12
             assert_eq!(rtype.rs1(), 11); // x11
             assert_eq!(rtype.rs2(), 12); // x12
-            assert_eq!(rtype.funct3(), Some(IntRegFunc3::AddSub));
+            assert_eq!(rtype.op(), Some(IntRegOp::Add));
             assert_eq!(rtype.funct7(), 0x00); // add vs sub
         }
         _ => panic!("Wrong instruction type"),
@@ -221,7 +221,7 @@ fn test_register_arithmetic() {
             assert_eq!(rtype.rd(), 10); // x10
             assert_eq!(rtype.rs1(), 10); // x10
             assert_eq!(rtype.rs2(), 11); // x11
-            assert_eq!(rtype.funct3(), Some(IntRegFunc3::AddSub));
+            assert_eq!(rtype.op(), Some(IntRegOp::Sub));
             assert_eq!(rtype.funct7(), 0x20); // add vs sub
         }
         _ => panic!("Wrong instruction type"),
@@ -234,7 +234,7 @@ fn test_register_arithmetic() {
             assert_eq!(rtype.rd(), 15); // x15
             assert_eq!(rtype.rs1(), 12); // x12
             assert_eq!(rtype.rs2(), 15); // x15
-            assert_eq!(rtype.funct3(), Some(IntRegFunc3::Xor));
+            assert_eq!(rtype.op(), Some(IntRegOp::Xor));
             assert_eq!(rtype.funct7(), 0x00);
         }
         _ => panic!("Wrong instruction type"),

@@ -2,25 +2,24 @@ use std::fmt::Debug;
 
 use crate::*;
 
-impl Debug for RType<IntRegFunc3> {
+impl Debug for RType<IntRegOp> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RType")
             .field("rd", &self.rd())
             .field("rs1", &self.rs1())
             .field("rs2", &self.rs2())
-            .field("funct3", &self.funct3())
-            .field("funct7", &self.funct7())
+            .field("op", &self.op())
             .finish()
     }
 }
 
-impl Debug for IType<IntImmFunc3> {
+impl Debug for IType<IntImmOp> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("IType")
             .field("rd", &self.rd())
             .field("rs1", &self.rs1())
             .field("signed_imm", &self.signed_imm())
-            .field("funct3", &self.funct3())
+            .field("op", &self.op())
             .finish()
     }
 }
@@ -45,35 +44,35 @@ impl Debug for IType<EcallInst> {
     }
 }
 
-impl Debug for SType<LoadStoreFunc3, LImm> {
+impl Debug for SType<LoadSize, LImm> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SType")
             .field("rs1", &self.rs1())
             .field("rs2", &self.rs2())
             .field("signed_imm", &self.signed_imm())
-            .field("funct3", &self.funct3())
+            .field("op", &self.op())
             .finish()
     }
 }
 
-impl Debug for SType<LoadStoreFunc3, SImm> {
+impl Debug for SType<StoreSize, SImm> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SType")
             .field("rs1", &self.rs1())
             .field("rs2", &self.rs2())
             .field("signed_imm", &self.signed_imm())
-            .field("funct3", &self.funct3())
+            .field("op", &self.op())
             .finish()
     }
 }
 
-impl Debug for SType<BranchFunc3, BImm> {
+impl Debug for SType<BranchOp, BImm> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SType")
             .field("rs1", &self.rs1())
             .field("rs2", &self.rs2())
             .field("signed_imm", &self.signed_imm())
-            .field("funct3", &self.funct3())
+            .field("op", &self.op())
             .finish()
     }
 }

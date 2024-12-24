@@ -5,71 +5,165 @@ mod test;
 
 use std::{fmt::Debug, marker::PhantomData};
 
-macro_rules! impl_from_bits {
-    (pub enum $enum_name:ident { $($variant:ident = $value:expr),* $(,)? }) => {
-        #[derive(Debug, PartialEq, Eq)]
-        pub enum $enum_name {
-            $( $variant = $value ),*
-        }
-
-        impl $enum_name {
-            pub const fn from(value: u8) -> Option<Self> {
-                match value {
-                    $( $value => Some($enum_name::$variant), )*
-                    _ => None,
-                }
-            }
-        }
-    };
+#[derive(Debug, PartialEq, Eq)]
+pub enum LoadSize {
+    IByte,
+    IHalf,
+    IWord,
+    UByte,
+    UHalf,
+    UWord,
 }
 
-impl_from_bits!(
-    pub enum LoadStoreFunc3 {
-        IByte = 0b000,
-        IHalf = 0b001,
-        IWord = 0b010,
-        UByte = 0b100,
-        UHalf = 0b101,
-        UWord = 0b110,
+impl LoadSize {
+    pub const fn from(funct3: u8) -> Option<Self> {
+        match funct3 {
+            0b000 => Some(LoadSize::IByte),
+            0b001 => Some(LoadSize::IHalf),
+            0b010 => Some(LoadSize::IWord),
+            0b100 => Some(LoadSize::UByte),
+            0b101 => Some(LoadSize::UHalf),
+            0b110 => Some(LoadSize::UWord),
+            _ => None,
+        }
     }
-);
+}
 
-impl_from_bits!(
-    pub enum IntRegFunc3 {
-        AddSub = 0b000,
-        Sll = 0b001,
-        Slt = 0b010,
-        Sltu = 0b011,
-        Xor = 0b100,
-        SrlSra = 0b101,
-        Or = 0b110,
-        And = 0b111,
-    }
-);
+#[derive(Debug, PartialEq, Eq)]
+pub enum StoreSize {
+    Byte,
+    Half,
+    Word,
+}
 
-impl_from_bits!(
-    pub enum IntImmFunc3 {
-        Addi = 0b000,
-        Slli = 0b001,
-        Slti = 0b010,
-        Sltiu = 0b011,
-        Xori = 0b100,
-        SrliSrai = 0b101,
-        Ori = 0b110,
-        Andi = 0b111,
+impl StoreSize {
+    pub const fn from(funct3: u8) -> Option<Self> {
+        match funct3 {
+            0b000 => Some(StoreSize::Byte),
+            0b001 => Some(StoreSize::Half),
+            0b010 => Some(StoreSize::Word),
+            _ => None,
+        }
     }
-);
+}
 
-impl_from_bits!(
-    pub enum BranchFunc3 {
-        Beq = 0b000,
-        Bne = 0b001,
-        Blt = 0b100,
-        Bge = 0b101,
-        Bltu = 0b110,
-        Bgeu = 0b111,
+#[derive(Debug, PartialEq, Eq)]
+pub enum IntRegOp {
+    Add,
+    Sub,
+    Sll,
+    Slt,
+    Sltu,
+    Xor,
+    Srl,
+    Sra,
+    Or,
+    And,
+    #[cfg(feature = "rv32m")]
+    Mul,
+    #[cfg(feature = "rv32m")]
+    Mulh,
+    #[cfg(feature = "rv32m")]
+    Mulhsu,
+    #[cfg(feature = "rv32m")]
+    Mulu,
+    #[cfg(feature = "rv32m")]
+    Div,
+    #[cfg(feature = "rv32m")]
+    Divu,
+    #[cfg(feature = "rv32m")]
+    Rem,
+    #[cfg(feature = "rv32m")]
+    Remu,
+}
+
+impl IntRegOp {
+    pub const fn from(funct3: u8, funct7: u8) -> Option<Self> {
+        match (funct3, funct7) {
+            (0b000, 0b0000000) => Some(IntRegOp::Add),
+            (0b000, 0b0100000) => Some(IntRegOp::Sub),
+            (0b001, 0b0000000) => Some(IntRegOp::Sll),
+            (0b010, 0b0000000) => Some(IntRegOp::Slt),
+            (0b011, 0b0000000) => Some(IntRegOp::Sltu),
+            (0b100, 0b0000000) => Some(IntRegOp::Xor),
+            (0b101, 0b0000000) => Some(IntRegOp::Srl),
+            (0b101, 0b0100000) => Some(IntRegOp::Sra),
+            (0b110, 0b0000000) => Some(IntRegOp::Or),
+            (0b111, 0b0000000) => Some(IntRegOp::And),
+            #[cfg(feature = "rv32m")]
+            (0b000, 0b0000001) => Some(IntRegOp::Mul),
+            #[cfg(feature = "rv32m")]
+            (0b001, 0b0000001) => Some(IntRegOp::Mulh),
+            #[cfg(feature = "rv32m")]
+            (0b010, 0b0000001) => Some(IntRegOp::Mulhsu),
+            #[cfg(feature = "rv32m")]
+            (0b011, 0b0000001) => Some(IntRegOp::Mulu),
+            #[cfg(feature = "rv32m")]
+            (0b100, 0b0000001) => Some(IntRegOp::Div),
+            #[cfg(feature = "rv32m")]
+            (0b101, 0b0000001) => Some(IntRegOp::Divu),
+            #[cfg(feature = "rv32m")]
+            (0b110, 0b0000001) => Some(IntRegOp::Rem),
+            #[cfg(feature = "rv32m")]
+            (0b111, 0b0000001) => Some(IntRegOp::Remu),
+            _ => None,
+        }
     }
-);
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum IntImmOp {
+    Addi,
+    Slti,
+    Sltiu,
+    Xori,
+    Ori,
+    Andi,
+    Slli,
+    Srli,
+    Srai,
+}
+
+impl IntImmOp {
+    pub const fn from(funct3: u8, funct7: u8) -> Option<Self> {
+        match (funct3, funct7) {
+            (0b000, _) => Some(IntImmOp::Addi),
+            (0b010, _) => Some(IntImmOp::Slti),
+            (0b011, _) => Some(IntImmOp::Sltiu),
+            (0b100, _) => Some(IntImmOp::Xori),
+            (0b110, _) => Some(IntImmOp::Ori),
+            (0b111, _) => Some(IntImmOp::Andi),
+            (0b001, 0b0000000) => Some(IntImmOp::Slli),
+            (0b101, 0b0000000) => Some(IntImmOp::Srli),
+            (0b101, 0b0100000) => Some(IntImmOp::Srai),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum BranchOp {
+    Beq,
+    Bne,
+    Blt,
+    Bge,
+    Bltu,
+    Bgeu,
+}
+
+impl BranchOp {
+    pub const fn from(funct3: u8) -> Option<Self> {
+        match funct3 {
+            0b000 => Some(BranchOp::Beq),
+            0b001 => Some(BranchOp::Bne),
+            0b100 => Some(BranchOp::Blt),
+            0b101 => Some(BranchOp::Bge),
+            0b110 => Some(BranchOp::Bltu),
+            0b111 => Some(BranchOp::Bgeu),
+            _ => None,
+        }
+    }
+}
 
 pub struct RType<T>(pub u32, PhantomData<T>);
 impl<T> RType<T> {
@@ -90,9 +184,9 @@ impl<T> RType<T> {
     }
 }
 
-impl RType<IntRegFunc3> {
-    pub const fn funct3(&self) -> Option<IntRegFunc3> {
-        IntRegFunc3::from(((self.0 >> 12) & 0b111) as u8)
+impl RType<IntRegOp> {
+    pub const fn op(&self) -> Option<IntRegOp> {
+        IntRegOp::from(((self.0 >> 12) & 0b111) as u8, self.funct7())
     }
 }
 
@@ -136,9 +230,9 @@ impl IType<EcallInst> {
     }
 }
 
-impl IType<IntImmFunc3> {
-    pub const fn funct3(&self) -> Option<IntImmFunc3> {
-        IntImmFunc3::from(((self.0 >> 12) & 0b111) as u8)
+impl IType<IntImmOp> {
+    pub const fn op(&self) -> Option<IntImmOp> {
+        IntImmOp::from(((self.0 >> 12) & 0b111) as u8, self.funct7())
     }
 }
 
@@ -184,21 +278,21 @@ impl<T> SType<T, LImm> {
     }
 }
 
-impl SType<LoadStoreFunc3, LImm> {
-    pub const fn funct3(&self) -> Option<LoadStoreFunc3> {
-        LoadStoreFunc3::from(((self.0 >> 12) & 0b111) as u8)
+impl SType<LoadSize, LImm> {
+    pub const fn op(&self) -> Option<LoadSize> {
+        LoadSize::from(((self.0 >> 12) & 0b111) as u8)
     }
 }
 
-impl SType<LoadStoreFunc3, SImm> {
-    pub const fn funct3(&self) -> Option<LoadStoreFunc3> {
-        LoadStoreFunc3::from(((self.0 >> 12) & 0b111) as u8)
+impl SType<StoreSize, SImm> {
+    pub const fn op(&self) -> Option<StoreSize> {
+        StoreSize::from(((self.0 >> 12) & 0b111) as u8)
     }
 }
 
-impl SType<BranchFunc3, BImm> {
-    pub const fn funct3(&self) -> Option<BranchFunc3> {
-        BranchFunc3::from(((self.0 >> 12) & 0b111) as u8)
+impl SType<BranchOp, BImm> {
+    pub const fn op(&self) -> Option<BranchOp> {
+        BranchOp::from(((self.0 >> 12) & 0b111) as u8)
     }
 }
 
@@ -244,15 +338,15 @@ impl UType<UpperImm> {
 
 #[derive(Debug)]
 pub enum Instruction {
-    IntImm(IType<IntImmFunc3>),
+    IntImm(IType<IntImmOp>),
     Lui(UType<UpperImm>),
     Auipc(UType<UpperImm>),
-    IntReg(RType<IntRegFunc3>),
+    IntReg(RType<IntRegOp>),
     Jal(UType<JImm>),
     Jalr(IType<JalrInst>),
-    Branch(SType<BranchFunc3, BImm>),
-    Load(SType<LoadStoreFunc3, LImm>),
-    Store(SType<LoadStoreFunc3, SImm>),
+    Branch(SType<BranchOp, BImm>),
+    Load(SType<LoadSize, LImm>),
+    Store(SType<StoreSize, SImm>),
     // TODO: Fence
     Fence(UType<UImm>),
     Ecall(IType<EcallInst>),
