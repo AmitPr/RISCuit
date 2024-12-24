@@ -1,5 +1,6 @@
 [workspace]
 members = ["vm", "crates/*", "test/guest"]
+resolver = "2"
 
 [workspace.dependencies]
 riscv-inst = { path = "crates/riscv-inst" }

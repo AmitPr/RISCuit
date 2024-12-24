@@ -45,290 +45,140 @@ impl Cpu {
         }
 
         let inst = self.mem.load_word(self.pc);
-        let inst = Instruction::new(inst);
+        let inst = Instruction::decode(inst)
+            .unwrap_or_else(|| panic!("Invalid instruction: {:08x}", inst));
 
-        let opcode: Opcode = inst
-            .opcode()
-            .unwrap_or_else(|| panic!("Invalid instruction: {:08x}", inst.0));
-        println!("0x{:08x}: {:?}", self.pc, opcode);
-        match opcode {
-            Opcode::Load => {
-                let dest = inst.rd();
-                let base = self.get_reg(inst.rs1());
-                let offset = inst.signed_imm();
-                let src = base.wrapping_add_signed(offset);
-
-                let func3 = LoadStoreFunc3::from(inst.funct3()).expect("Invalid funct3");
-                match func3 {
-                    LoadStoreFunc3::IByte => {
-                        let byte = self.mem.load_byte(src) as i8 as i32 as u32;
-                        self.set_reg(dest, byte);
-                    }
-                    LoadStoreFunc3::IHalf => {
-                        let half = self.mem.load_half(src) as i16 as i32 as u32;
-                        self.set_reg(dest, half);
-                    }
-                    LoadStoreFunc3::UByte => {
-                        let byte = self.mem.load_byte(src) as u32;
-                        self.set_reg(dest, byte);
-                    }
-                    LoadStoreFunc3::UHalf => {
-                        let half = self.mem.load_half(src) as u32;
-                        self.set_reg(dest, half);
-                    }
-                    LoadStoreFunc3::IWord | LoadStoreFunc3::UWord => {
-                        let word = self.mem.load_word(src);
-                        self.set_reg(dest, word);
-                    }
-                }
-                self.pc = self.pc.wrapping_add(4);
-            }
-            Opcode::Store => {
-                // TODO: Modify riscv-inst for better S-type decoding
-                let u_offset = ((inst.funct7() as u32) << 5) | inst.rd();
-                let offset = (u_offset << 20) as i32 >> 20;
-                let base = self.get_reg(inst.rs1());
-                let src = self.get_reg(inst.rs2());
-                let dest = base.wrapping_add_signed(offset);
-
-                let func3 = LoadStoreFunc3::from(inst.funct3()).expect("Invalid funct3");
-                match func3 {
-                    LoadStoreFunc3::IByte => {
-                        let data = (src & 0xff) as u8;
-                        self.mem.store_byte(dest, data);
-                    }
-                    LoadStoreFunc3::IHalf => {
-                        let data = (src & 0xffff) as u16;
-                        self.mem.store_half(dest, data);
-                    }
-                    LoadStoreFunc3::IWord => {
-                        self.mem.store_word(dest, src);
-                    }
-                    _ => {}
-                }
-                self.pc = self.pc.wrapping_add(4);
-            }
-            Opcode::IntReg => {
-                let dest = inst.rd();
-                let a = self.get_reg(inst.rs1());
-                let b = self.get_reg(inst.rs2());
-
-                let func3 = IntRegFunc3::from(inst.funct3()).expect("Invalid funct3");
-                match func3 {
-                    IntRegFunc3::AddSub => {
-                        let func7 = inst.funct7();
-                        if func7 == 0 {
-                            // add
-                            let res = a.wrapping_add(b);
-                            self.set_reg(dest, res);
-                        } else if func7 == 0b0100000 {
-                            // sub
-                            let res = a.wrapping_sub(b);
-                            self.set_reg(dest, res);
-                        } else {
-                            todo!();
-                        }
-                    }
-                    IntRegFunc3::Slt => {
-                        let res = (a as i32) < (b as i32);
-                        self.set_reg(dest, res as u32);
-                    }
-                    IntRegFunc3::Sltu => {
-                        let res = (a < b) as u32;
-                        self.set_reg(dest, res);
-                    }
-                    IntRegFunc3::Sll => {
-                        let shamt = b & 0x1f;
-                        let res = a << shamt;
-                        self.set_reg(dest, res);
-                    }
-                    IntRegFunc3::SrlSra => {
-                        let func7 = inst.funct7();
-                        if func7 == 0 {
-                            // srl
-                            let shamt = b & 0x1f;
-                            let res = a >> shamt;
-                            self.set_reg(dest, res);
-                        } else if func7 == 0b0100000 {
-                            // sra (sign-extend)
-                            let shamt = b & 0x1f;
-                            let res = (a as i32 >> shamt) as u32;
-                            self.set_reg(dest, res);
-                        }
-                    }
-                    IntRegFunc3::Xor => {
-                        let res = a ^ b;
-                        self.set_reg(dest, res);
-                    }
-                    IntRegFunc3::Or => {
-                        let res = a | b;
-                        self.set_reg(dest, res);
-                    }
-                    IntRegFunc3::And => {
-                        let res = a & b;
-                        self.set_reg(dest, res);
-                    }
-                }
-                self.pc = self.pc.wrapping_add(4);
-            }
-            Opcode::IntImm => {
-                let dest = inst.rd();
+        println!("0x{:08x}: {:?}", self.pc, inst);
+        match inst {
+            Instruction::IntImm(inst) => {
                 let a = self.get_reg(inst.rs1());
                 let b = inst.signed_imm();
 
-                let func3 = IntImmFunc3::from(inst.funct3()).expect("Invalid funct3");
-                match func3 {
-                    IntImmFunc3::Addi => {
-                        let res = a.wrapping_add_signed(b);
-                        self.set_reg(dest, res);
-                    }
-                    IntImmFunc3::Slti => {
-                        let res = (a as i32) < b;
-                        self.set_reg(dest, res as u32);
-                    }
-                    IntImmFunc3::Sltiu => {
-                        let res = a < (b as u32);
-                        self.set_reg(dest, res as u32);
-                    }
-                    IntImmFunc3::Xori => {
-                        let res = a ^ (b as u32);
-                        self.set_reg(dest, res);
-                    }
-                    IntImmFunc3::Ori => {
-                        let res = a | (b as u32);
-                        self.set_reg(dest, res);
-                    }
-                    IntImmFunc3::Andi => {
-                        let res = a & (b as u32);
-                        self.set_reg(dest, res);
-                    }
-                    IntImmFunc3::Slli => {
-                        let shamt = b & 0x1f;
-                        let res = a << shamt;
-                        self.set_reg(dest, res);
-                    }
-                    IntImmFunc3::SrliSrai => {
-                        let func7 = inst.funct7();
-                        if func7 == 0 {
-                            // srli
-                            let shamt = b & 0x1f;
-                            let res = a >> shamt;
-                            self.set_reg(dest, res);
-                        } else if func7 == 0b0100000 {
-                            // srai (sign-extend)
-                            let shamt = b & 0x1f;
-                            let res = (a as i32 >> shamt) as u32;
-                            self.set_reg(dest, res);
-                        } else {
-                            todo!();
-                        }
-                    }
-                }
-                self.pc = self.pc.wrapping_add(4);
-            }
-            Opcode::Lui => {
-                let dest = inst.rd();
-                let imm = inst.imm20() << 12;
-                self.set_reg(dest, imm);
-                self.pc = self.pc.wrapping_add(4);
-            }
-            Opcode::Auipc => {
-                let dest = inst.rd();
-                let imm = inst.imm20() << 12;
-                let res = self.pc.wrapping_add_signed(imm as i32);
-                self.set_reg(dest, res);
-                self.pc = self.pc.wrapping_add(4);
-            }
-            Opcode::Jal => {
-                let dest = inst.rd();
-                let next_pc = self.pc.wrapping_add(4);
-                self.set_reg(dest, next_pc);
+                let res = match inst.funct3().expect("Invalid funct3") {
+                    IntImmFunc3::Addi => a.wrapping_add_signed(b),
+                    IntImmFunc3::Slti => ((a as i32) < b) as u32,
+                    IntImmFunc3::Sltiu => (a < (b as u32)) as u32,
+                    IntImmFunc3::Xori => a ^ (b as u32),
+                    IntImmFunc3::Ori => a | (b as u32),
+                    IntImmFunc3::Andi => a & (b as u32),
+                    IntImmFunc3::Slli => a << inst.shamt(),
+                    IntImmFunc3::SrliSrai => match inst.funct7() {
+                        0 => a >> inst.shamt(),
+                        0b0100000 => (a as i32 >> inst.shamt()) as u32,
+                        _ => panic!("Invalid funct7: {:08x}", inst.funct7()),
+                    },
+                };
 
-                let raw = inst.0;
-                let offset = ((((raw & 0x80000000) as i32) >> 11) as u32) // imm[20]
-                    | (raw & 0xFF000) // imm[19:12]
-                    | ((raw >> 9) & 0x800) // imm[11]
-                    | ((raw >> 20) & 0x7FE); // imm[10:1]
-                println!(
-                    "jal: pc=0x{:08x}, offset=0x{:08x}, next={:08x}",
-                    self.pc,
-                    offset,
-                    self.pc.wrapping_add_signed(offset as i32)
-                );
-                self.pc = self.pc.wrapping_add_signed(offset as i32);
+                self.set_reg(inst.rd(), res);
+                self.pc = self.pc.wrapping_add(4);
             }
-            Opcode::Jalr => {
-                let dest = inst.rd();
-                let base = self.get_reg(inst.rs1());
-                let offset = inst.signed_imm();
-                let next_pc = self.pc.wrapping_add(4);
-                self.set_reg(dest, next_pc);
-                self.pc = base.wrapping_add_signed(offset);
+            Instruction::Lui(inst) => {
+                self.set_reg(inst.rd(), inst.unsigned_imm());
+                self.pc = self.pc.wrapping_add(4);
             }
-            Opcode::Branch => {
-                let u_imm = ((inst.funct7() as u32) << 5) | inst.rd();
-                let offset = (u_imm << 20) as i32 >> 20;
+            Instruction::Auipc(inst) => {
+                let res = self.pc.wrapping_add_signed(inst.signed_imm());
+                self.set_reg(inst.rd(), res);
+                self.pc = self.pc.wrapping_add(4);
+            }
+            Instruction::IntReg(inst) => {
                 let a = self.get_reg(inst.rs1());
                 let b = self.get_reg(inst.rs2());
 
-                let func3 = BranchFunc3::from(inst.funct3()).expect("Invalid funct3");
-                match func3 {
-                    BranchFunc3::Beq => {
-                        if a == b {
-                            self.pc = self.pc.wrapping_add_signed(offset);
-                        } else {
-                            self.pc = self.pc.wrapping_add(4);
-                        }
-                    }
-                    BranchFunc3::Bne => {
-                        if a != b {
-                            self.pc = self.pc.wrapping_add_signed(offset);
-                        } else {
-                            self.pc = self.pc.wrapping_add(4);
-                        }
-                    }
-                    BranchFunc3::Blt => {
-                        if (a as i32) < (b as i32) {
-                            self.pc = self.pc.wrapping_add_signed(offset);
-                        } else {
-                            self.pc = self.pc.wrapping_add(4);
-                        }
-                    }
-                    BranchFunc3::Bge => {
-                        if (a as i32) >= (b as i32) {
-                            self.pc = self.pc.wrapping_add_signed(offset);
-                        } else {
-                            self.pc = self.pc.wrapping_add(4);
-                        }
-                    }
-                    BranchFunc3::Bltu => {
-                        if a < b {
-                            self.pc = self.pc.wrapping_add_signed(offset);
-                        } else {
-                            self.pc = self.pc.wrapping_add(4);
-                        }
-                    }
-                    BranchFunc3::Bgeu => {
-                        if a >= b {
-                            self.pc = self.pc.wrapping_add_signed(offset);
-                        } else {
-                            self.pc = self.pc.wrapping_add(4);
-                        }
-                    }
-                }
-            }
-            Opcode::Fence => {
-                // TODO: Do we need to implement this?
+                let res = match inst.funct3().expect("Invalid funct3") {
+                    IntRegFunc3::AddSub => match inst.funct7() {
+                        0 => a.wrapping_add(b),
+                        0b0100000 => a.wrapping_sub(b),
+                        _ => panic!("Invalid funct7: {:08x}", inst.funct7()),
+                    },
+                    IntRegFunc3::Slt => ((a as i32) < (b as i32)) as u32,
+                    IntRegFunc3::Sltu => (a < b) as u32,
+                    IntRegFunc3::Sll => a << (b & 0x1f),
+                    IntRegFunc3::SrlSra => match inst.funct7() {
+                        0 => a >> (b & 0x1f),
+                        0b0100000 => (a as i32 >> (b & 0x1f)) as u32,
+                        _ => panic!("Invalid funct7: {:08x}", inst.funct7()),
+                    },
+                    IntRegFunc3::Xor => a ^ b,
+                    IntRegFunc3::Or => a | b,
+                    IntRegFunc3::And => a & b,
+                };
+
+                self.set_reg(inst.rd(), res);
                 self.pc = self.pc.wrapping_add(4);
             }
-            Opcode::Ecall => {
-                if inst.funct7() == 1 {
-                    // ebreak
+            Instruction::Jal(inst) => {
+                let next_pc = self.pc.wrapping_add(4);
+                self.set_reg(inst.rd(), next_pc);
+                self.pc = self.pc.wrapping_add_signed(inst.signed_imm());
+            }
+            Instruction::Jalr(inst) => {
+                let next_pc = self.pc.wrapping_add(4);
+                self.set_reg(inst.rd(), next_pc);
+
+                let base = self.get_reg(inst.rs1());
+                self.pc = base.wrapping_add_signed(inst.signed_imm());
+            }
+            Instruction::Branch(inst) => {
+                let a = self.get_reg(inst.rs1());
+                let b = self.get_reg(inst.rs2());
+
+                let taken = match inst.funct3().expect("Invalid funct3") {
+                    BranchFunc3::Beq => a == b,
+                    BranchFunc3::Bne => a != b,
+                    BranchFunc3::Blt => (a as i32) < (b as i32),
+                    BranchFunc3::Bge => (a as i32) >= (b as i32),
+                    BranchFunc3::Bltu => a < b,
+                    BranchFunc3::Bgeu => a >= b,
+                };
+
+                if taken {
+                    self.pc = self.pc.wrapping_add_signed(inst.signed_imm());
+                } else {
+                    self.pc = self.pc.wrapping_add(4);
+                }
+            }
+            Instruction::Load(inst) => {
+                let base = self.get_reg(inst.rs1());
+                let src = base.wrapping_add_signed(inst.signed_imm());
+
+                let res = match inst.funct3().expect("Invalid funct3") {
+                    LoadStoreFunc3::IByte => self.mem.load_byte(src) as i8 as i32 as u32,
+                    LoadStoreFunc3::IHalf => self.mem.load_half(src) as i16 as i32 as u32,
+                    LoadStoreFunc3::UByte => self.mem.load_byte(src) as u32,
+                    LoadStoreFunc3::UHalf => self.mem.load_half(src) as u32,
+                    LoadStoreFunc3::IWord | LoadStoreFunc3::UWord => self.mem.load_word(src),
+                };
+
+                self.set_reg(inst.rd(), res);
+                self.pc = self.pc.wrapping_add(4);
+            }
+            Instruction::Store(inst) => {
+                let base = self.get_reg(inst.rs1());
+                let dest = base.wrapping_add_signed(inst.signed_imm());
+                let src = self.get_reg(inst.rs2());
+
+                match inst.funct3().expect("Invalid funct3") {
+                    LoadStoreFunc3::IByte => self.mem.store_byte(dest, src as u8),
+                    LoadStoreFunc3::IHalf => self.mem.store_half(dest, src as u16),
+                    LoadStoreFunc3::IWord => self.mem.store_word(dest, src),
+                    _ => panic!("Invalid funct3"),
+                }
+
+                self.pc = self.pc.wrapping_add(4);
+            }
+            Instruction::Fence(_) => {
+                // no-op
+                self.pc = self.pc.wrapping_add(4);
+            }
+            Instruction::Ecall(inst) => {
+                if inst.is_ebreak() {
                     println!("ebreak at 0x{:08x}", self.pc);
                     self.running = false;
                 } else {
                     let a0 = self.get_reg(10);
                     let a1 = self.get_reg(11);
+                    println!("ecall {}: {:x}", a0, a1);
                     match a0 {
                         1 => {
                             // print int
