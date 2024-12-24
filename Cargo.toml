@@ -1,0 +1,5 @@
+[workspace]
+members = ["vm", "crates/*", "test/guest"]
+
+[workspace.dependencies]
+riscv-inst = { path = "crates/riscv-inst" }

@@ -1,0 +1,9 @@
+[package]
+name = "derisc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+elf = "0.7.4"
+libc = "0.2.169"
+riscv-inst.workspace = true
