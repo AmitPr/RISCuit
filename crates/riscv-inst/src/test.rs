@@ -161,10 +161,10 @@ fn test_immediate_arithmetic() {
     // slli x16,x16,0x3
     let inst = decode(0x00381813).unwrap();
     match inst {
-        R { inst, op: SLLI } => {
+        I { inst, op: SLLI } => {
             assert_eq!(inst.rd(), 16); // x16
             assert_eq!(inst.rs1(), 16); // x16
-            assert_eq!(inst.rs2(), 3); // shift amount
+            assert_eq!(inst.shamt(), 3); // shift amount
         }
         _ => panic!("Wrong instruction type"),
     }

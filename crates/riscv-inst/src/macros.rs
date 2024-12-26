@@ -54,15 +54,15 @@ macro_rules! bits {
     (@count $acc:expr, $end:literal : $start:literal) => {
         $acc + $end - $start + 1
     };
-    (@count $acc:expr, <0>) => {
-        $acc + 1
+    (@count $acc:expr, <0 repeat $zeros:literal>) => {
+        $acc + $zeros
     };
     (@count $acc:expr, $end:literal : $start:literal | $($rest:tt)+) => {
         bits!(@count $acc + $end - $start + 1, $($rest)+)
     };
 
     // Zero bits
-    (@process $input:ident, $result:ident, $total_bits: ident, $idx:expr, <0>) => {};
+    (@process $input:ident, $result:ident, $total_bits: ident, $idx:expr, <0 repeat $zeros:literal>) => {};
 
     // Range Terminal
     (@process $input:ident, $result:ident, $total_bits: ident, $idx:expr, $end:literal : $start:literal) => {
@@ -104,7 +104,7 @@ macro_rules! instruction {
         opcodes {
             // Match e.g. [6:0] == 0x03 => Opcodes::ALU
             // or more than one constraint [6:0] == 0b0110011 && [14:12] == 0x7 => Opcodes::AND
-            $( $([$end:literal : $start:literal] == $opcode:literal)&&+ => $opname:ident, )*
+            $( $([$end:literal : $start:literal] == $opcode:literal)&&+ $(if [$if_end:literal : $if_start:literal] == $if_code:literal)? => $opname:ident, )*
         }
     ) => {
         #[allow(non_snake_case)]
@@ -136,7 +136,7 @@ macro_rules! instruction {
                 pub const fn decode(inst: u32) -> Option<Self> {
                     match inst & MASK {
                         $(
-                            desired::$opname => Some(Self::$opname),
+                            desired::$opname $(if ((inst & mask!($if_start, $if_end)) == desired!($if_code, $if_start)))? => Some(Opcode::$opname),
                         )*
                         _ => None,
                     }

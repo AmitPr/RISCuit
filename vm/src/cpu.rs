@@ -69,9 +69,6 @@ impl Cpu32 {
                     SRA => (a as i32 >> (b!() & 0x1f)) as u32,
                     OR => a | b!(),
                     AND => a & b!(),
-                    SLLI => a << inst.rs2(),
-                    SRLI => a >> inst.rs2(),
-                    SRAI => (a as i32 >> inst.rs2()) as u32,
 
                     MUL => a.wrapping_mul(b!()),
                     MULH => ((a as i64 * b!() as i64) >> 32) as u32,
@@ -136,6 +133,9 @@ impl Cpu32 {
                     XORI => a ^ (imm as u32),
                     ORI => a | (imm as u32),
                     ANDI => a & (imm as u32),
+                    SLLI => a << inst.shamt(),
+                    SRLI => a >> inst.shamt(),
+                    SRAI => (a as i32 >> inst.shamt()) as u32,
                     LB => self.mem.load_byte(a.wrapping_add_signed(imm)) as i8 as i32 as u32,
                     LH => self.mem.load_half(a.wrapping_add_signed(imm)) as i16 as i32 as u32,
                     LW => self.mem.load_word(a.wrapping_add_signed(imm)),
@@ -143,36 +143,8 @@ impl Cpu32 {
                     LHU => self.mem.load_half(a.wrapping_add_signed(imm)) as u32,
                     JALR => self.pc.wrapping_add(4),
                     SYSTEM => {
-                        if imm == 0 {
-                            // ecall
-                            let a0 = self.get_reg(10);
-                            let a1 = self.get_reg(11);
-                            match a0 {
-                                1 => print!("{}", a1 as i32),
-                                2 => print!("{}", (a1 & 0xff) as u8 as char),
-                                3 => {
-                                    let mut addr = a1;
-                                    loop {
-                                        let b = self.mem.load_byte(addr);
-                                        if b == 0 {
-                                            break;
-                                        }
-                                        print!("{}", b as char);
-                                        addr = addr.wrapping_add(1);
-                                    }
-                                }
-                                93 => {
-                                    println!("exit: {}", a1 as i32);
-                                    self.running = false;
-                                }
-                                _ => {}
-                            }
-                        } else {
-                            // ebreak
-                            println!("ebreak");
-                            self.running = false;
-                        }
-                        // these don't modify rd1()
+                        self.syscall(a, imm);
+                        // these don't modify rd1
                         0
                     }
                 };
@@ -224,8 +196,8 @@ impl Cpu32 {
             U { inst, op } => {
                 let imm = inst.imm();
                 let res = match op {
-                    LUI => imm << 12,
-                    AUIPC => self.pc.wrapping_add_signed((imm << 12) as i32),
+                    LUI => imm,
+                    AUIPC => self.pc.wrapping_add_signed(imm as i32),
                 };
                 self.set_reg(inst.rd(), res);
                 self.pc = self.pc.wrapping_add(4);
@@ -237,6 +209,38 @@ impl Cpu32 {
                     self.pc = self.pc.wrapping_add_signed(inst.imm());
                 }
             },
+        }
+    }
+
+    pub fn syscall(&mut self, _rs1: u32, imm: i32) {
+        if imm == 0 {
+            // ecall
+            let a0 = self.get_reg(10);
+            let a1 = self.get_reg(11);
+            match a0 {
+                1 => print!("{}", a1 as i32),
+                2 => print!("{}", (a1 & 0xff) as u8 as char),
+                3 => {
+                    let mut addr = a1;
+                    loop {
+                        let b = self.mem.load_byte(addr);
+                        if b == 0 {
+                            break;
+                        }
+                        print!("{}", b as char);
+                        addr = addr.wrapping_add(1);
+                    }
+                }
+                93 => {
+                    println!("exit: {}", a1 as i32);
+                    self.running = false;
+                }
+                _ => {}
+            }
+        } else {
+            // ebreak
+            println!("ebreak");
+            self.running = false;
         }
     }
 

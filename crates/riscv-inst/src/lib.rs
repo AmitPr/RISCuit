@@ -37,12 +37,6 @@ instruction! {
         [6:0] == 0b0110011 && [14:12] == 0x6 && [31:25] == 0x00 => OR,
         [6:0] == 0b0110011 && [14:12] == 0x7 && [31:25] == 0x00 => AND,
 
-        // SLLI, SRLI, SRAI are I-type instructions, but they are
-        // encoded by effectively using funct7 from the R-type instructions.
-        [6:0] == 0b0010011 && [14:12] == 0x1 && [31:25] == 0x00 => SLLI,
-        [6:0] == 0b0010011 && [14:12] == 0x5 && [31:25] == 0x00 => SRLI,
-        [6:0] == 0b0010011 && [14:12] == 0x5 && [31:25] == 0x20 => SRAI,
-
         // M extension
         [6:0] == 0b0110011 && [14:12] == 0x0 && [31:25] == 0x01 => MUL,
         [6:0] == 0b0110011 && [14:12] == 0x1 && [31:25] == 0x01 => MULH,
@@ -62,6 +56,7 @@ instruction! {
         rd: [11:7],
         funct3: [14:12],
         rs1: [19:15],
+        shamt: [24:20],
         imm: [sigext 31:20],
     },
     mask: [14:12] | [6:0],
@@ -72,6 +67,10 @@ instruction! {
         [6:0] == 0b0010011 && [14:12] == 0x4 => XORI,
         [6:0] == 0b0010011 && [14:12] == 0x6 => ORI,
         [6:0] == 0b0010011 && [14:12] == 0x7 => ANDI,
+
+        [6:0] == 0b0010011 && [14:12] == 0x1 if [31:25] == 0x00 => SLLI,
+        [6:0] == 0b0010011 && [14:12] == 0x5 if [31:25] == 0x00 => SRLI,
+        [6:0] == 0b0010011 && [14:12] == 0x5 if [31:25] == 0x20 => SRAI,
 
         [6:0] == 0b0000011 && [14:12] == 0x0 => LB,
         [6:0] == 0b0000011 && [14:12] == 0x1 => LH,
@@ -110,7 +109,7 @@ instruction! {
         funct3: [14:12],
         rs1: [19:15],
         rs2: [24:20],
-        imm: [sigext 31:31 | 7:7 | 30:25 | 11:8 | <0>],
+        imm: [sigext 31:31 | 7:7 | 30:25 | 11:8 | <0 repeat 1>],
     },
     mask: [14:12] | [6:0],
     opcodes {
@@ -128,7 +127,7 @@ instruction! {
     u::U {
         opcode: [6:0],
         rd: [11:7],
-        imm: [31:12],
+        imm: [31:12 | <0 repeat 12>],
     },
     mask: [6:0],
     opcodes {
@@ -142,7 +141,7 @@ instruction! {
     j::J {
         opcode: [6:0],
         rd: [11:7],
-        imm: [sigext 31:31 | 19:12 | 20:20 | 30:21 | <0>],
+        imm: [sigext 31:31 | 19:12 | 20:20 | 30:21 | <0 repeat 1>],
     },
     mask: [6:0],
     opcodes {
@@ -164,15 +163,6 @@ pub enum Opcode {
 pub const fn decode(inst: u32) -> Option<Opcode> {
     match inst & 0x7f {
         0b0110011 => match ROpcode::decode(inst) {
-            Some(op) => Some(Opcode::R { inst: R(inst), op }),
-            None => None,
-        },
-        // TODO: We're using R type for SLLI, SRLI, SRAI
-        0b0010011 if ((inst >> 12) & 0b111) == 0b001 => match ROpcode::decode(inst) {
-            Some(op) => Some(Opcode::R { inst: R(inst), op }),
-            None => None,
-        },
-        0b0010011 if ((inst >> 12) & 0b111) == 0b101 => match ROpcode::decode(inst) {
             Some(op) => Some(Opcode::R { inst: R(inst), op }),
             None => None,
         },
