@@ -1,20 +1,20 @@
-use riscv_inst::*;
+use riscv_inst::{
+    BOpcode::*, IOpcode::*, JOpcode::*, Opcode::*, ROpcode::*, SOpcode::*, UOpcode::*,
+};
 
 use crate::memory::Memory;
-// use riscv_decode::{decode, Instruction};
-use std::io::{self, Write};
 
 /// A simple CPU for RV32I instructions
-pub struct Cpu {
+pub struct Cpu32 {
     regs: [u32; 32],
     pub pc: u32,
     pub mem: Memory,
     pub running: bool,
 }
 
-impl Cpu {
+impl Cpu32 {
     pub fn new() -> Self {
-        Cpu {
+        Cpu32 {
             regs: [0; 32],
             pc: 0,
             mem: Memory::new(),
@@ -45,166 +45,198 @@ impl Cpu {
         }
 
         let inst = self.mem.load_word(self.pc);
-        let inst = Instruction::decode(inst)
-            .unwrap_or_else(|| panic!("Invalid instruction: {:08x}", inst));
+        let op =
+            riscv_inst::decode(inst).unwrap_or_else(|| panic!("Invalid instruction: {:08x}", inst));
 
-        println!("0x{:08x}: {:?}", self.pc, inst);
-        match inst {
-            Instruction::IntImm(inst) => {
+        println!("0x{:08x}:\t{inst:08x}\t{:?}", self.pc, op);
+        match op {
+            R { inst, op } => {
                 let a = self.get_reg(inst.rs1());
-                let b = inst.signed_imm();
-
-                let res = match inst.op().expect("Invalid funct3") {
-                    IntImmOp::Addi => a.wrapping_add_signed(b),
-                    IntImmOp::Slti => ((a as i32) < b) as u32,
-                    IntImmOp::Sltiu => (a < (b as u32)) as u32,
-                    IntImmOp::Xori => a ^ (b as u32),
-                    IntImmOp::Ori => a | (b as u32),
-                    IntImmOp::Andi => a & (b as u32),
-                    IntImmOp::Slli => a << inst.shamt(),
-                    IntImmOp::Srai => (a as i32 >> inst.shamt()) as u32,
-                    IntImmOp::Srli => a >> inst.shamt(),
-                };
-
-                self.set_reg(inst.rd(), res);
-                self.pc = self.pc.wrapping_add(4);
-            }
-            Instruction::Lui(inst) => {
-                self.set_reg(inst.rd(), inst.unsigned_imm());
-                self.pc = self.pc.wrapping_add(4);
-            }
-            Instruction::Auipc(inst) => {
-                let res = self.pc.wrapping_add_signed(inst.signed_imm());
-                self.set_reg(inst.rd(), res);
-                self.pc = self.pc.wrapping_add(4);
-            }
-            Instruction::IntReg(inst) => {
-                let a = self.get_reg(inst.rs1());
-                let b = self.get_reg(inst.rs2());
-
-                let res = match inst.op().expect("Invalid funct3") {
-                    IntRegOp::Add => a.wrapping_add(b),
-                    IntRegOp::Sub => a.wrapping_sub(b),
-                    IntRegOp::Slt => ((a as i32) < (b as i32)) as u32,
-                    IntRegOp::Sltu => (a < b) as u32,
-                    IntRegOp::Sll => a << (b & 0x1f),
-                    IntRegOp::Srl => a >> (b & 0x1f),
-                    IntRegOp::Sra => (a as i32 >> (b & 0x1f)) as u32,
-                    IntRegOp::Xor => a ^ b,
-                    IntRegOp::Or => a | b,
-                    IntRegOp::And => a & b,
-                    _ => todo!("rv32m"),
-                };
-
-                self.set_reg(inst.rd(), res);
-                self.pc = self.pc.wrapping_add(4);
-            }
-            Instruction::Jal(inst) => {
-                let next_pc = self.pc.wrapping_add(4);
-                self.set_reg(inst.rd(), next_pc);
-                self.pc = self.pc.wrapping_add_signed(inst.signed_imm());
-            }
-            Instruction::Jalr(inst) => {
-                let next_pc = self.pc.wrapping_add(4);
-                self.set_reg(inst.rd(), next_pc);
-
-                let base = self.get_reg(inst.rs1());
-                self.pc = base.wrapping_add_signed(inst.signed_imm());
-            }
-            Instruction::Branch(inst) => {
-                let a = self.get_reg(inst.rs1());
-                let b = self.get_reg(inst.rs2());
-
-                let taken = match inst.op().expect("Invalid funct3") {
-                    BranchOp::Beq => a == b,
-                    BranchOp::Bne => a != b,
-                    BranchOp::Blt => (a as i32) < (b as i32),
-                    BranchOp::Bge => (a as i32) >= (b as i32),
-                    BranchOp::Bltu => a < b,
-                    BranchOp::Bgeu => a >= b,
-                };
-
-                if taken {
-                    self.pc = self.pc.wrapping_add_signed(inst.signed_imm());
-                } else {
-                    self.pc = self.pc.wrapping_add(4);
+                // SLLI, SRLI, SRAI don't use b/rs2, so only load it when needed
+                macro_rules! b {
+                    () => {
+                        self.get_reg(inst.rs2())
+                    };
                 }
-            }
-            Instruction::Load(inst) => {
-                let base = self.get_reg(inst.rs1());
-                let src = base.wrapping_add_signed(inst.signed_imm());
+                let res = match op {
+                    ADD => a.wrapping_add(b!()),
+                    SUB => a.wrapping_sub(b!()),
+                    SLL => a << (b!() & 0x1f),
+                    SLT => ((a as i32) < (b!() as i32)) as u32,
+                    SLTU => (a < b!()) as u32,
+                    XOR => a ^ b!(),
+                    SRL => a >> (b!() & 0x1f),
+                    SRA => (a as i32 >> (b!() & 0x1f)) as u32,
+                    OR => a | b!(),
+                    AND => a & b!(),
+                    SLLI => a << inst.rs2(),
+                    SRLI => a >> inst.rs2(),
+                    SRAI => (a as i32 >> inst.rs2()) as u32,
 
-                let res = match inst.op().expect("Invalid funct3") {
-                    LoadSize::IByte => self.mem.load_byte(src) as i8 as i32 as u32,
-                    LoadSize::IHalf => self.mem.load_half(src) as i16 as i32 as u32,
-                    LoadSize::UByte => self.mem.load_byte(src) as u32,
-                    LoadSize::UHalf => self.mem.load_half(src) as u32,
-                    LoadSize::IWord | LoadSize::UWord => self.mem.load_word(src),
+                    MUL => a.wrapping_mul(b!()),
+                    MULH => ((a as i64 * b!() as i64) >> 32) as u32,
+                    MULHSU => (((a as i32 as i64) * (b!() as i64)) >> 32) as u32,
+                    MULHU => ((a as u64 * b!() as u64) >> 32) as u32,
+                    DIV => {
+                        let a = a as i32;
+                        let b = b!() as i32;
+                        if b == 0 {
+                            // Division by zero returns -1
+                            u32::MAX
+                        } else if a == i32::MIN && b == -1 {
+                            // Handle signed division overflow
+                            a as u32
+                        } else {
+                            a.wrapping_div(b) as u32
+                        }
+                    }
+                    DIVU => {
+                        let b = b!();
+                        if b == 0 {
+                            // Division by zero returns MAX
+                            u32::MAX
+                        } else {
+                            a.wrapping_div(b)
+                        }
+                    }
+                    REM => {
+                        let a = a as i32;
+                        let b = b!() as i32;
+                        if b == 0 {
+                            // Remainder of division by zero returns the dividend
+                            a as u32
+                        } else if a == i32::MIN && b == -1 {
+                            // Handle signed division overflow - remainder is 0
+                            0
+                        } else {
+                            a.wrapping_rem(b) as u32
+                        }
+                    }
+                    REMU => {
+                        let b = b!();
+                        if b == 0 {
+                            // Remainder of division by zero returns the dividend
+                            a
+                        } else {
+                            a.wrapping_rem(b)
+                        }
+                    }
                 };
-
                 self.set_reg(inst.rd(), res);
                 self.pc = self.pc.wrapping_add(4);
             }
-            Instruction::Store(inst) => {
-                let base = self.get_reg(inst.rs1());
-                let dest = base.wrapping_add_signed(inst.signed_imm());
-                let src = self.get_reg(inst.rs2());
+            I { inst, op } => {
+                let a = self.get_reg(inst.rs1());
+                let imm = inst.imm();
 
-                match inst.op().expect("Invalid funct3") {
-                    StoreSize::Byte => self.mem.store_byte(dest, src as u8),
-                    StoreSize::Half => self.mem.store_half(dest, src as u16),
-                    StoreSize::Word => self.mem.store_word(dest, src),
-                }
-
-                self.pc = self.pc.wrapping_add(4);
-            }
-            Instruction::Fence(_) => {
-                // no-op
-                self.pc = self.pc.wrapping_add(4);
-            }
-            Instruction::Ecall(inst) => {
-                if inst.is_ebreak() {
-                    println!("ebreak at 0x{:08x}", self.pc);
-                    self.running = false;
-                } else {
-                    let a0 = self.get_reg(10);
-                    let a1 = self.get_reg(11);
-                    println!("ecall {}: {:x}", a0, a1);
-                    match a0 {
-                        1 => {
-                            // print int
-                            print!("{}", a1 as i32);
-                            io::stdout().flush().ok();
-                        }
-                        2 => {
-                            // print char
-                            let c = (a1 & 0xff) as u8 as char;
-                            print!("{}", c);
-                            io::stdout().flush().ok();
-                        }
-                        3 => {
-                            // print string from [a1..]
-                            let mut addr = a1;
-                            loop {
-                                let b = self.mem.load_byte(addr);
-                                if b == 0 {
-                                    break;
+                let res = match op {
+                    ADDI => a.wrapping_add_signed(imm),
+                    SLTI => ((a as i32) < imm) as u32,
+                    SLTIU => (a < (imm as u32)) as u32,
+                    XORI => a ^ (imm as u32),
+                    ORI => a | (imm as u32),
+                    ANDI => a & (imm as u32),
+                    LB => self.mem.load_byte(a.wrapping_add_signed(imm)) as i8 as i32 as u32,
+                    LH => self.mem.load_half(a.wrapping_add_signed(imm)) as i16 as i32 as u32,
+                    LW => self.mem.load_word(a.wrapping_add_signed(imm)),
+                    LBU => self.mem.load_byte(a.wrapping_add_signed(imm)) as u32,
+                    LHU => self.mem.load_half(a.wrapping_add_signed(imm)) as u32,
+                    JALR => self.pc.wrapping_add(4),
+                    SYSTEM => {
+                        if imm == 0 {
+                            // ecall
+                            let a0 = self.get_reg(10);
+                            let a1 = self.get_reg(11);
+                            match a0 {
+                                1 => print!("{}", a1 as i32),
+                                2 => print!("{}", (a1 & 0xff) as u8 as char),
+                                3 => {
+                                    let mut addr = a1;
+                                    loop {
+                                        let b = self.mem.load_byte(addr);
+                                        if b == 0 {
+                                            break;
+                                        }
+                                        print!("{}", b as char);
+                                        addr = addr.wrapping_add(1);
+                                    }
                                 }
-                                print!("{}", b as char);
-                                addr = addr.wrapping_add(1);
+                                93 => {
+                                    println!("exit: {}", a1 as i32);
+                                    self.running = false;
+                                }
+                                _ => {}
                             }
-                            io::stdout().flush().ok();
-                        }
-                        93 => {
-                            // exit
-                            println!("exiting with code {}", a1 as i32);
+                        } else {
+                            // ebreak
+                            println!("ebreak");
                             self.running = false;
                         }
-                        _ => {}
+                        // these don't modify rd1()
+                        0
                     }
-                    self.pc = self.pc.wrapping_add(4);
+                };
+
+                // Apply the result
+                match op {
+                    JALR => {
+                        self.set_reg(inst.rd(), res);
+                        self.pc = a.wrapping_add_signed(imm);
+                    }
+                    SYSTEM => {
+                        self.pc = self.pc.wrapping_add(4);
+                    }
+                    _ => {
+                        self.set_reg(inst.rd(), res);
+                        self.pc = self.pc.wrapping_add(4);
+                    }
                 }
             }
+            S { inst, op } => {
+                let base = self.get_reg(inst.rs1());
+                let src = self.get_reg(inst.rs2());
+                let addr = base.wrapping_add_signed(inst.imm());
+                match op {
+                    SB => self.mem.store_byte(addr, src as u8),
+                    SH => self.mem.store_half(addr, src as u16),
+                    SW => self.mem.store_word(addr, src),
+                }
+
+                self.pc = self.pc.wrapping_add(4);
+            }
+            B { inst, op } => {
+                let a = self.get_reg(inst.rs1());
+                let b = self.get_reg(inst.rs2());
+                let taken = match op {
+                    BEQ => a == b,
+                    BNE => a != b,
+                    BLT => (a as i32) < (b as i32),
+                    BGE => (a as i32) >= (b as i32),
+                    BLTU => a < b,
+                    BGEU => a >= b,
+                };
+                self.pc = if taken {
+                    self.pc.wrapping_add_signed(inst.imm())
+                } else {
+                    self.pc.wrapping_add(4)
+                };
+            }
+            U { inst, op } => {
+                let imm = inst.imm();
+                let res = match op {
+                    LUI => imm << 12,
+                    AUIPC => self.pc.wrapping_add_signed((imm << 12) as i32),
+                };
+                self.set_reg(inst.rd(), res);
+                self.pc = self.pc.wrapping_add(4);
+            }
+            J { inst, op } => match op {
+                JAL => {
+                    let next_pc = self.pc.wrapping_add(4);
+                    self.set_reg(inst.rd(), next_pc);
+                    self.pc = self.pc.wrapping_add_signed(inst.imm());
+                }
+            },
         }
     }
 

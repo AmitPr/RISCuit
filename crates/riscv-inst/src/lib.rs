@@ -1,373 +1,201 @@
-mod traits;
+#[macro_use]
+mod macros;
 
 #[cfg(test)]
 mod test;
 
-use std::{fmt::Debug, marker::PhantomData};
+use std::ops::Range;
+
+#[inline(always)]
+#[must_use = "this returns the result of the operation, without modifying the original"]
+/// Get the bits in range [start..end) and place them at dst_pos
+pub(crate) const fn bits32(val: u32, range: Range<u8>, dst_pos: u8) -> u32 {
+    let width = range.end - range.start;
+    let mask = ((1u32 << width) - 1) & (val >> range.start);
+    mask << dst_pos
+}
+
+instruction! {
+    r::R {
+        opcode: [6:0],
+        rd: [11:7],
+        funct3: [14:12],
+        rs1: [19:15],
+        rs2: [24:20],
+        funct7: [31:25],
+    },
+    mask: [31:25] | [14:12] | [6:0],
+    opcodes {
+        [6:0] == 0b0110011 && [14:12] == 0x0 && [31:25] == 0x00 => ADD,
+        [6:0] == 0b0110011 && [14:12] == 0x0 && [31:25] == 0x20 => SUB,
+        [6:0] == 0b0110011 && [14:12] == 0x1 && [31:25] == 0x00 => SLL,
+        [6:0] == 0b0110011 && [14:12] == 0x2 && [31:25] == 0x00 => SLT,
+        [6:0] == 0b0110011 && [14:12] == 0x3 && [31:25] == 0x00 => SLTU,
+        [6:0] == 0b0110011 && [14:12] == 0x4 && [31:25] == 0x00 => XOR,
+        [6:0] == 0b0110011 && [14:12] == 0x5 && [31:25] == 0x00 => SRL,
+        [6:0] == 0b0110011 && [14:12] == 0x5 && [31:25] == 0x20 => SRA,
+        [6:0] == 0b0110011 && [14:12] == 0x6 && [31:25] == 0x00 => OR,
+        [6:0] == 0b0110011 && [14:12] == 0x7 && [31:25] == 0x00 => AND,
+
+        // SLLI, SRLI, SRAI are I-type instructions, but they are
+        // encoded by effectively using funct7 from the R-type instructions.
+        [6:0] == 0b0010011 && [14:12] == 0x1 && [31:25] == 0x00 => SLLI,
+        [6:0] == 0b0010011 && [14:12] == 0x5 && [31:25] == 0x00 => SRLI,
+        [6:0] == 0b0010011 && [14:12] == 0x5 && [31:25] == 0x20 => SRAI,
+
+        // M extension
+        [6:0] == 0b0110011 && [14:12] == 0x0 && [31:25] == 0x01 => MUL,
+        [6:0] == 0b0110011 && [14:12] == 0x1 && [31:25] == 0x01 => MULH,
+        [6:0] == 0b0110011 && [14:12] == 0x2 && [31:25] == 0x01 => MULHSU,
+        [6:0] == 0b0110011 && [14:12] == 0x3 && [31:25] == 0x01 => MULHU,
+        [6:0] == 0b0110011 && [14:12] == 0x4 && [31:25] == 0x01 => DIV,
+        [6:0] == 0b0110011 && [14:12] == 0x5 && [31:25] == 0x01 => DIVU,
+        [6:0] == 0b0110011 && [14:12] == 0x6 && [31:25] == 0x01 => REM,
+        [6:0] == 0b0110011 && [14:12] == 0x7 && [31:25] == 0x01 => REMU,
+    }
+}
+pub use r::{Opcode as ROpcode, R};
+
+instruction! {
+    i::I {
+        opcode: [6:0],
+        rd: [11:7],
+        funct3: [14:12],
+        rs1: [19:15],
+        imm: [sigext 31:20],
+    },
+    mask: [14:12] | [6:0],
+    opcodes {
+        [6:0] == 0b0010011 && [14:12] == 0x0 => ADDI,
+        [6:0] == 0b0010011 && [14:12] == 0x2 => SLTI,
+        [6:0] == 0b0010011 && [14:12] == 0x3 => SLTIU,
+        [6:0] == 0b0010011 && [14:12] == 0x4 => XORI,
+        [6:0] == 0b0010011 && [14:12] == 0x6 => ORI,
+        [6:0] == 0b0010011 && [14:12] == 0x7 => ANDI,
+
+        [6:0] == 0b0000011 && [14:12] == 0x0 => LB,
+        [6:0] == 0b0000011 && [14:12] == 0x1 => LH,
+        [6:0] == 0b0000011 && [14:12] == 0x2 => LW,
+        [6:0] == 0b0000011 && [14:12] == 0x4 => LBU,
+        [6:0] == 0b0000011 && [14:12] == 0x5 => LHU,
+
+        [6:0] == 0b1100111 && [14:12] == 0x0 => JALR,
+
+        // ECALL and EBREAK need special handling downstream to differentiate
+        [6:0] == 0b1110011 && [14:12] == 0x0 => SYSTEM,
+    }
+}
+pub use i::{Opcode as IOpcode, I};
+
+instruction! {
+    s::S {
+        opcode: [6:0],
+        funct3: [14:12],
+        rs1: [19:15],
+        rs2: [24:20],
+        imm: [sigext 31:25 | 11:7],
+    },
+    mask: [14:12] | [6:0],
+    opcodes {
+        [6:0] == 0b0100011 && [14:12] == 0x0 => SB,
+        [6:0] == 0b0100011 && [14:12] == 0x1 => SH,
+        [6:0] == 0b0100011 && [14:12] == 0x2 => SW,
+    }
+}
+pub use s::{Opcode as SOpcode, S};
+
+instruction! {
+    b::B {
+        opcode: [6:0],
+        funct3: [14:12],
+        rs1: [19:15],
+        rs2: [24:20],
+        imm: [sigext 31:31 | 7:7 | 30:25 | 11:8 | <0>],
+    },
+    mask: [14:12] | [6:0],
+    opcodes {
+        [6:0] == 0b1100011 && [14:12] == 0x0 => BEQ,
+        [6:0] == 0b1100011 && [14:12] == 0x1 => BNE,
+        [6:0] == 0b1100011 && [14:12] == 0x4 => BLT,
+        [6:0] == 0b1100011 && [14:12] == 0x5 => BGE,
+        [6:0] == 0b1100011 && [14:12] == 0x6 => BLTU,
+        [6:0] == 0b1100011 && [14:12] == 0x7 => BGEU,
+    }
+}
+pub use b::{Opcode as BOpcode, B};
+
+instruction! {
+    u::U {
+        opcode: [6:0],
+        rd: [11:7],
+        imm: [31:12],
+    },
+    mask: [6:0],
+    opcodes {
+        [6:0] == 0b0110111 => LUI,
+        [6:0] == 0b0010111 => AUIPC,
+    }
+}
+pub use u::{Opcode as UOpcode, U};
+
+instruction! {
+    j::J {
+        opcode: [6:0],
+        rd: [11:7],
+        imm: [sigext 31:31 | 19:12 | 20:20 | 30:21 | <0>],
+    },
+    mask: [6:0],
+    opcodes {
+        [6:0] == 0b1101111 => JAL,
+    }
+}
+pub use j::{Opcode as JOpcode, J};
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum LoadSize {
-    IByte,
-    IHalf,
-    IWord,
-    UByte,
-    UHalf,
-    UWord,
+pub enum Opcode {
+    R { inst: R, op: ROpcode },
+    I { inst: I, op: IOpcode },
+    S { inst: S, op: SOpcode },
+    B { inst: B, op: BOpcode },
+    U { inst: U, op: UOpcode },
+    J { inst: J, op: JOpcode },
 }
 
-impl LoadSize {
-    pub const fn from(funct3: u8) -> Option<Self> {
-        match funct3 {
-            0b000 => Some(LoadSize::IByte),
-            0b001 => Some(LoadSize::IHalf),
-            0b010 => Some(LoadSize::IWord),
-            0b100 => Some(LoadSize::UByte),
-            0b101 => Some(LoadSize::UHalf),
-            0b110 => Some(LoadSize::UWord),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum StoreSize {
-    Byte,
-    Half,
-    Word,
-}
-
-impl StoreSize {
-    pub const fn from(funct3: u8) -> Option<Self> {
-        match funct3 {
-            0b000 => Some(StoreSize::Byte),
-            0b001 => Some(StoreSize::Half),
-            0b010 => Some(StoreSize::Word),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum IntRegOp {
-    Add,
-    Sub,
-    Sll,
-    Slt,
-    Sltu,
-    Xor,
-    Srl,
-    Sra,
-    Or,
-    And,
-    #[cfg(feature = "rv32m")]
-    Mul,
-    #[cfg(feature = "rv32m")]
-    Mulh,
-    #[cfg(feature = "rv32m")]
-    Mulhsu,
-    #[cfg(feature = "rv32m")]
-    Mulu,
-    #[cfg(feature = "rv32m")]
-    Div,
-    #[cfg(feature = "rv32m")]
-    Divu,
-    #[cfg(feature = "rv32m")]
-    Rem,
-    #[cfg(feature = "rv32m")]
-    Remu,
-}
-
-impl IntRegOp {
-    pub const fn from(funct3: u8, funct7: u8) -> Option<Self> {
-        match (funct3, funct7) {
-            (0b000, 0b0000000) => Some(IntRegOp::Add),
-            (0b000, 0b0100000) => Some(IntRegOp::Sub),
-            (0b001, 0b0000000) => Some(IntRegOp::Sll),
-            (0b010, 0b0000000) => Some(IntRegOp::Slt),
-            (0b011, 0b0000000) => Some(IntRegOp::Sltu),
-            (0b100, 0b0000000) => Some(IntRegOp::Xor),
-            (0b101, 0b0000000) => Some(IntRegOp::Srl),
-            (0b101, 0b0100000) => Some(IntRegOp::Sra),
-            (0b110, 0b0000000) => Some(IntRegOp::Or),
-            (0b111, 0b0000000) => Some(IntRegOp::And),
-            #[cfg(feature = "rv32m")]
-            (0b000, 0b0000001) => Some(IntRegOp::Mul),
-            #[cfg(feature = "rv32m")]
-            (0b001, 0b0000001) => Some(IntRegOp::Mulh),
-            #[cfg(feature = "rv32m")]
-            (0b010, 0b0000001) => Some(IntRegOp::Mulhsu),
-            #[cfg(feature = "rv32m")]
-            (0b011, 0b0000001) => Some(IntRegOp::Mulu),
-            #[cfg(feature = "rv32m")]
-            (0b100, 0b0000001) => Some(IntRegOp::Div),
-            #[cfg(feature = "rv32m")]
-            (0b101, 0b0000001) => Some(IntRegOp::Divu),
-            #[cfg(feature = "rv32m")]
-            (0b110, 0b0000001) => Some(IntRegOp::Rem),
-            #[cfg(feature = "rv32m")]
-            (0b111, 0b0000001) => Some(IntRegOp::Remu),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum IntImmOp {
-    Addi,
-    Slti,
-    Sltiu,
-    Xori,
-    Ori,
-    Andi,
-    Slli,
-    Srli,
-    Srai,
-}
-
-impl IntImmOp {
-    pub const fn from(funct3: u8, funct7: u8) -> Option<Self> {
-        match (funct3, funct7) {
-            (0b000, _) => Some(IntImmOp::Addi),
-            (0b010, _) => Some(IntImmOp::Slti),
-            (0b011, _) => Some(IntImmOp::Sltiu),
-            (0b100, _) => Some(IntImmOp::Xori),
-            (0b110, _) => Some(IntImmOp::Ori),
-            (0b111, _) => Some(IntImmOp::Andi),
-            (0b001, 0b0000000) => Some(IntImmOp::Slli),
-            (0b101, 0b0000000) => Some(IntImmOp::Srli),
-            (0b101, 0b0100000) => Some(IntImmOp::Srai),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum BranchOp {
-    Beq,
-    Bne,
-    Blt,
-    Bge,
-    Bltu,
-    Bgeu,
-}
-
-impl BranchOp {
-    pub const fn from(funct3: u8) -> Option<Self> {
-        match funct3 {
-            0b000 => Some(BranchOp::Beq),
-            0b001 => Some(BranchOp::Bne),
-            0b100 => Some(BranchOp::Blt),
-            0b101 => Some(BranchOp::Bge),
-            0b110 => Some(BranchOp::Bltu),
-            0b111 => Some(BranchOp::Bgeu),
-            _ => None,
-        }
-    }
-}
-
-pub struct RType<T>(pub u32, PhantomData<T>);
-impl<T> RType<T> {
-    pub const fn rd(&self) -> u32 {
-        (self.0 >> 7) & 0b1_1111
-    }
-
-    pub const fn rs1(&self) -> u32 {
-        (self.0 >> 15) & 0b1_1111
-    }
-
-    pub const fn rs2(&self) -> u32 {
-        (self.0 >> 20) & 0b1_1111
-    }
-
-    pub const fn funct7(&self) -> u8 {
-        ((self.0 >> 25) & 0b111_1111) as u8
-    }
-}
-
-impl RType<IntRegOp> {
-    pub const fn op(&self) -> Option<IntRegOp> {
-        IntRegOp::from(((self.0 >> 12) & 0b111) as u8, self.funct7())
-    }
-}
-
-pub struct IType<T>(pub u32, PhantomData<T>);
-pub struct JalrInst;
-pub struct EcallInst;
-
-impl<T> IType<T> {
-    pub const fn rd(&self) -> u32 {
-        (self.0 >> 7) & 0b1_1111
-    }
-
-    pub const fn rs1(&self) -> u32 {
-        (self.0 >> 15) & 0b1_1111
-    }
-
-    pub const fn signed_imm(&self) -> i32 {
-        self.0 as i32 >> 20
-    }
-
-    pub const fn unsigned_imm(&self) -> u32 {
-        self.0 >> 20
-    }
-
-    pub const fn shamt(&self) -> u32 {
-        (self.0 >> 20) & 0b1_1111
-    }
-
-    pub const fn funct7(&self) -> u8 {
-        ((self.0 >> 25) & 0b111_1111) as u8
-    }
-}
-
-impl IType<EcallInst> {
-    pub const fn is_ebreak(&self) -> bool {
-        self.funct7() == 1
-    }
-
-    pub const fn ecall_code(&self) -> u32 {
-        self.unsigned_imm()
-    }
-}
-
-impl IType<IntImmOp> {
-    pub const fn op(&self) -> Option<IntImmOp> {
-        IntImmOp::from(((self.0 >> 12) & 0b111) as u8, self.funct7())
-    }
-}
-
-pub struct SType<T, U>(pub u32, PhantomData<(T, U)>);
-pub struct SImm;
-pub struct BImm;
-pub struct LImm;
-
-impl<T, U> SType<T, U> {
-    pub const fn rs1(&self) -> u32 {
-        (self.0 >> 15) & 0b1_1111
-    }
-
-    pub const fn rs2(&self) -> u32 {
-        (self.0 >> 20) & 0b1_1111
-    }
-}
-
-impl<T> SType<T, SImm> {
-    pub const fn signed_imm(&self) -> i32 {
-        let hi = (self.0 as i32) >> 25;
-        let lo = (self.0 as i32 >> 7) & 0b1_1111;
-        (hi << 5) | lo
-    }
-}
-
-impl<T> SType<T, BImm> {
-    pub const fn signed_imm(&self) -> i32 {
-        let hi = ((self.0 & 0x8000_0000) as i32 >> 19) as u32;
-        (hi | ((self.0 & 0x7e00_0000) >> 20)
-            | ((self.0 & 0x0000_0f00) >> 7)
-            | ((self.0 & 0x0000_0080) << 4)) as i32
-    }
-}
-
-impl<T> SType<T, LImm> {
-    pub const fn signed_imm(&self) -> i32 {
-        self.0 as i32 >> 20
-    }
-
-    pub const fn rd(&self) -> u32 {
-        (self.0 >> 7) & 0b1_1111
-    }
-}
-
-impl SType<LoadSize, LImm> {
-    pub const fn op(&self) -> Option<LoadSize> {
-        LoadSize::from(((self.0 >> 12) & 0b111) as u8)
-    }
-}
-
-impl SType<StoreSize, SImm> {
-    pub const fn op(&self) -> Option<StoreSize> {
-        StoreSize::from(((self.0 >> 12) & 0b111) as u8)
-    }
-}
-
-impl SType<BranchOp, BImm> {
-    pub const fn op(&self) -> Option<BranchOp> {
-        BranchOp::from(((self.0 >> 12) & 0b111) as u8)
-    }
-}
-
-pub struct UType<T>(pub u32, PhantomData<T>);
-pub struct UImm;
-pub struct JImm;
-pub struct UpperImm;
-
-impl<T> UType<T> {
-    pub const fn rd(&self) -> u32 {
-        (self.0 >> 7) & 0b1_1111
-    }
-}
-
-impl UType<UImm> {
-    pub const fn unsigned_imm(&self) -> u32 {
-        self.0 >> 12
-    }
-
-    pub const fn signed_imm(&self) -> i32 {
-        self.0 as i32 >> 12
-    }
-}
-
-impl UType<JImm> {
-    pub const fn signed_imm(&self) -> i32 {
-        let hi = ((self.0 & 0x8000_0000) as i32 >> 11) as u32;
-        (hi | ((self.0 & 0x7fe0_0000) >> 20)
-            | ((self.0 & 0x0010_0000) >> 9)
-            | (self.0 & 0x000f_f000)) as i32
-    }
-}
-
-impl UType<UpperImm> {
-    pub const fn unsigned_imm(&self) -> u32 {
-        self.0 & 0xFFFFF000
-    }
-
-    pub const fn signed_imm(&self) -> i32 {
-        (self.0 & 0xFFFFF000) as i32
-    }
-}
-
-#[derive(Debug)]
-pub enum Instruction {
-    IntImm(IType<IntImmOp>),
-    Lui(UType<UpperImm>),
-    Auipc(UType<UpperImm>),
-    IntReg(RType<IntRegOp>),
-    Jal(UType<JImm>),
-    Jalr(IType<JalrInst>),
-    Branch(SType<BranchOp, BImm>),
-    Load(SType<LoadSize, LImm>),
-    Store(SType<StoreSize, SImm>),
-    // TODO: Fence
-    Fence(UType<UImm>),
-    Ecall(IType<EcallInst>),
-}
-
-impl Instruction {
-    pub fn decode(inst: u32) -> Option<Self> {
-        let opcode = inst & 0b1111111;
-        match opcode {
-            0b000_0011 => Some(Instruction::Load(SType(inst, PhantomData))),
-            0b010_0011 => Some(Instruction::Store(SType(inst, PhantomData))),
-            0b011_0011 => Some(Instruction::IntReg(RType(inst, PhantomData))),
-            0b001_0011 => Some(Instruction::IntImm(IType(inst, PhantomData))),
-            0b011_0111 => Some(Instruction::Lui(UType(inst, PhantomData))),
-            0b001_0111 => Some(Instruction::Auipc(UType(inst, PhantomData))),
-            0b110_1111 => Some(Instruction::Jal(UType(inst, PhantomData))),
-            0b110_0111 => Some(Instruction::Jalr(IType(inst, PhantomData))),
-            0b110_0011 => Some(Instruction::Branch(SType(inst, PhantomData))),
-            0b000_1111 => Some(Instruction::Fence(UType(inst, PhantomData))),
-            0b111_0011 => Some(Instruction::Ecall(IType(inst, PhantomData))),
-            _ => None,
-        }
+pub const fn decode(inst: u32) -> Option<Opcode> {
+    match inst & 0x7f {
+        0b0110011 => match ROpcode::decode(inst) {
+            Some(op) => Some(Opcode::R { inst: R(inst), op }),
+            None => None,
+        },
+        // TODO: We're using R type for SLLI, SRLI, SRAI
+        0b0010011 if ((inst >> 12) & 0b111) == 0b001 => match ROpcode::decode(inst) {
+            Some(op) => Some(Opcode::R { inst: R(inst), op }),
+            None => None,
+        },
+        0b0010011 if ((inst >> 12) & 0b111) == 0b101 => match ROpcode::decode(inst) {
+            Some(op) => Some(Opcode::R { inst: R(inst), op }),
+            None => None,
+        },
+        0b0000011 | 0b1100111 | 0b1110011 | 0b0010011 => match IOpcode::decode(inst) {
+            Some(op) => Some(Opcode::I { inst: I(inst), op }),
+            None => None,
+        },
+        0b0100011 => match SOpcode::decode(inst) {
+            Some(op) => Some(Opcode::S { inst: S(inst), op }),
+            None => None,
+        },
+        0b1100011 => match BOpcode::decode(inst) {
+            Some(op) => Some(Opcode::B { inst: B(inst), op }),
+            None => None,
+        },
+        0b0110111 | 0b0010111 => match UOpcode::decode(inst) {
+            Some(op) => Some(Opcode::U { inst: U(inst), op }),
+            None => None,
+        },
+        0b1101111 => match JOpcode::decode(inst) {
+            Some(op) => Some(Opcode::J { inst: J(inst), op }),
+            None => None,
+        },
+        _ => None,
     }
 }

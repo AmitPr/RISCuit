@@ -12,7 +12,7 @@ pub extern "C" fn _start() -> ! {
     } else {
         print_str("PC is odd\n\0");
     }
-    exit(0);
+    exit((reg(13) * reg(13)) as i32);
 }
 
 #[panic_handler]
@@ -26,6 +26,14 @@ fn pc() -> u32 {
         asm!("auipc {}, 0", out(reg) pc);
     }
     pc
+}
+
+fn reg(r: u32) -> u32 {
+    let val: u32;
+    unsafe {
+        asm!("mv {}, {}", out(reg) val, in(reg) r);
+    }
+    val
 }
 
 #[no_mangle]

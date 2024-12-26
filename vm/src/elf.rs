@@ -1,10 +1,10 @@
 use elf::endian::AnyEndian;
 use elf::{abi::PT_LOAD, ElfBytes};
 
-use crate::cpu::Cpu;
+use crate::cpu::Cpu32;
 
 /// Copies PT_LOAD segments into memory, returns the ELF entry point.
-pub fn load_elf(cpu: &mut Cpu, path: &str) -> u32 {
+pub fn load_elf(cpu: &mut Cpu32, path: &str) -> u32 {
     let file_data = std::fs::read(path).expect("Failed to read ELF file");
     let file =
         ElfBytes::<AnyEndian>::minimal_parse(&file_data).expect("Failed to parse ELF header");

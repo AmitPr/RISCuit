@@ -2,7 +2,7 @@ mod cpu;
 mod elf;
 mod memory;
 
-use cpu::Cpu;
+use cpu::Cpu32;
 use elf::load_elf;
 
 fn main() {
@@ -13,7 +13,7 @@ fn main() {
     }
     let elf_path = &args[1];
 
-    let mut cpu = Cpu::new();
+    let mut cpu = Cpu32::new();
     let entry = load_elf(&mut cpu, elf_path);
     cpu.pc = entry;
 
