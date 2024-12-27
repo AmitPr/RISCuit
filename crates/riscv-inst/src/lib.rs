@@ -1,5 +1,6 @@
 mod macros;
 pub mod rv32;
+pub mod rv64;
 
 #[cfg(feature = "c")]
 pub mod rv_c;

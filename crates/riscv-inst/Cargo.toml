@@ -9,7 +9,6 @@ m = []
 c = []
 
 [dependencies]
-num = "0.4.3"
 
 [build-dependencies]
 riscv-c-tables = { path = "../riscv-c-tables" }

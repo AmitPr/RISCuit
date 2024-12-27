@@ -1,20 +1,38 @@
-macro_rules! width_ty {
-    (i, 32) => {
-        i32
-    };
-    (i, 16) => {
-        i16
-    };
-    (u, 32) => {
-        u32
-    };
-    (u, 16) => {
+macro_rules! ty {
+    (@inst 16) => {
         u16
     };
-    (bits, 16) => {
+    (@inst 32) => {
+        u32
+    };
+    (@inst 64) => {
+        u32
+    };
+    (@ifield 16) => {
+        i32
+    };
+    (@ifield 32) => {
+        i32
+    };
+    (@ifield 64) => {
+        i64
+    };
+    (@ufield 16) => {
+        u32
+    };
+    (@ufield 32) => {
+        u32
+    };
+    (@ufield 64) => {
+        u64
+    };
+    (@bits 16) => {
         crate::bits16
     };
-    (bits, 32) => {
+    (@bits 32) => {
+        crate::bits32
+    };
+    (@bits 64) => {
         crate::bits32
     };
 }
@@ -47,14 +65,19 @@ macro_rules! bits {
     ($width: tt, $name:ident: [sigext $($spec:tt)+]) => {
         #[inline(never)]
         #[must_use = "this returns the result of the operation, without modifying the original"]
-        pub const fn $name(&self) -> crate::width_ty!(i, $width) {
+        pub const fn $name(&self) -> crate::ty!(@ifield $width) {
+            const WIDTH: u8 = <crate::ty!(@ufield $width)>::BITS as u8;
+
             let input = self.0;
-            let mut result: crate::width_ty!(u, $width) = 0;
+            let mut result: crate::ty!(@ufield $width) = 0;
             let total_bits = crate::bits!(@count 0, $($spec)+);
-            crate::bits!(@process $width, input, result, total_bits, 0, $($spec)+);
+            let mut pos = total_bits;
+            crate::bits!(@process $width, input, result, pos, $($spec)+);
 
             // sign extend
-            ((((result << (<crate::width_ty!(u, $width)>::BITS as u8 - total_bits)) as crate::width_ty!(i, $width)) >> (<crate::width_ty!(u, $width)>::BITS as u8 - total_bits)) as crate::width_ty!(i, $width))
+            let signed = (result << (WIDTH - total_bits)) as crate::ty!(@ifield $width);
+            let extended = signed >> (WIDTH - total_bits);
+            extended as crate::ty!(@ifield $width)
         }
     };
 
@@ -62,11 +85,13 @@ macro_rules! bits {
     ($width:tt, $name:ident: [$($spec:tt)+]) => {
         #[inline(never)]
         #[must_use = "this returns the result of the operation, without modifying the original"]
-        pub const fn $name(&self) -> crate::width_ty!(u, $width) {
+        pub const fn $name(&self) -> crate::ty!(@ufield $width) {
             let input = self.0;
-            let mut result: crate::width_ty!(u, $width) = 0;
+            let mut result: crate::ty!(@ufield $width) = 0;
             let total_bits = crate::bits!(@count 0, $($spec)+);
-            crate::bits!(@process $width, input, result, total_bits, 0, $($spec)+);
+            let mut pos = total_bits;
+            crate::bits!(@process $width, input, result, pos, $($spec)+);
+
             result
         }
     };
@@ -83,18 +108,34 @@ macro_rules! bits {
     };
 
     // Zero bits
-    (@process $width:tt, $input:ident, $result:ident, $total_bits: ident, $idx:expr, <0 repeat $zeros:literal>) => {};
+    (@process $width:tt, $input:ident, $result:ident, $idx:ident, <0 repeat $zeros:literal>) => {};
 
     // Range Terminal
-    (@process $width:tt, $input:ident, $result:ident, $total_bits: ident, $idx:expr, $end:literal : $start:literal) => {
-        $result |= (crate::width_ty!(bits, $width))($input, $start..($end + 1), $total_bits - $idx - ($end - $start + 1));
+    (@process $width:tt, $input:ident, $result:ident, $idx:ident, $end:literal : $start:literal) => {
+        {
+            let width = $end - $start + 1;
+            $idx -= width;
+            $result |= (crate::ty!(@bits $width))(
+                $input,
+                $start..($end + 1),
+                $idx
+            ) as crate::ty!(@ufield $width);
+        }
     };
 
 
     // Range | ...
-    (@process $width:tt, $input:ident, $result:ident, $total_bits: ident, $idx:expr, $end:literal : $start:literal | $($rest:tt)+) => {
-        $result |= crate::bits32($input, $start..($end + 1), ($total_bits - $idx) - ($end - $start + 1));
-        crate::bits!(@process $width, $input, $result, $total_bits, $idx + ($end - $start + 1), $($rest)+)
+    (@process $width:tt, $input:ident, $result:ident, $idx:ident, $end:literal : $start:literal | $($rest:tt)+) => {
+        {
+            let width = $end - $start + 1;
+            $idx -= width;
+            $result |= (crate::ty!(@bits $width))(
+                $input,
+                $start..($end + 1),
+                $idx
+            ) as crate::ty!(@ufield $width);
+        }
+        crate::bits!(@process $width, $input, $result, $idx, $($rest)+)
     };
 }
 
@@ -139,7 +180,7 @@ macro_rules! instruction {
         #[allow(non_snake_case)]
         mod $mod_name {
             #[derive(PartialEq, Eq)]
-            pub struct $type(pub crate::width_ty!(u, $width));
+            pub struct $type(pub crate::ty!(@inst $width));
 
             impl $type {
                 $(
@@ -155,16 +196,16 @@ macro_rules! instruction {
                 )*
             }
 
-            const MASK: crate::width_ty!(u, $width) = crate::mask!( $($mask_start, $mask_end),+ );
+            const MASK: crate::ty!(@inst $width) = crate::mask!( $($mask_start, $mask_end),+ );
             mod _mask_match {
                 $(
                     $(#[cfg($cfg)])?
-                    pub const $opname: crate::width_ty!(u, $width) = $(crate::desired!($opcode, $start)) | +;
+                    pub const $opname: crate::ty!(@inst $width) = $(crate::desired!($opcode, $start)) | +;
                 )*
             }
 
             impl Opcode {
-                pub const fn decode(inst: crate::width_ty!(u, $width)) -> Option<Self> {
+                pub const fn decode(inst: crate::ty!(@inst $width)) -> Option<Self> {
                     match inst & MASK {
                         $(
                             $(#[cfg($cfg)])?
@@ -190,4 +231,4 @@ macro_rules! instruction {
     };
 }
 
-pub(crate) use {bits, desired, instruction, mask, width_ty};
+pub(crate) use {bits, desired, instruction, mask, ty};
