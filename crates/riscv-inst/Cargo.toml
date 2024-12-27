@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["rv32m"]
-rv64i = []
-rv32m = []
+default = ["m", "c"]
+m = []
+c = []
+
+[dependencies]
+num = "0.4.3"
+
+[build-dependencies]
+riscv-c-tables = { path = "../riscv-c-tables" }

@@ -1,5 +1,11 @@
-use riscv_inst::{
-    BOpcode::*, IOpcode::*, JOpcode::*, Opcode::*, ROpcode::*, SOpcode::*, UOpcode::*,
+use riscv_inst::rv32::{
+    BOpcode::*,
+    IOpcode::*,
+    JOpcode::*,
+    Opcode::{self, *},
+    ROpcode::*,
+    SOpcode::*,
+    UOpcode::*,
 };
 
 use crate::memory::Memory;
@@ -45,8 +51,10 @@ impl Cpu32 {
         }
 
         let inst = self.mem.load_word(self.pc);
-        let op =
-            riscv_inst::decode(inst).unwrap_or_else(|| panic!("Invalid instruction: {:08x}", inst));
+        let (op, inc) =
+            Opcode::decode(inst).unwrap_or_else(|| panic!("Invalid instruction: {:08x}", inst));
+
+        let mut next_pc = self.pc.wrapping_add(inc);
 
         println!("0x{:08x}:\t{inst:08x}\t{:?}", self.pc, op);
         match op {
@@ -120,7 +128,6 @@ impl Cpu32 {
                     }
                 };
                 self.set_reg(inst.rd(), res);
-                self.pc = self.pc.wrapping_add(4);
             }
             I { inst, op } => {
                 let a = self.get_reg(inst.rs1());
@@ -141,7 +148,7 @@ impl Cpu32 {
                     LW => self.mem.load_word(a.wrapping_add_signed(imm)),
                     LBU => self.mem.load_byte(a.wrapping_add_signed(imm)) as u32,
                     LHU => self.mem.load_half(a.wrapping_add_signed(imm)) as u32,
-                    JALR => self.pc.wrapping_add(4),
+                    JALR => next_pc,
                     SYSTEM => {
                         self.syscall(a, imm);
                         // these don't modify rd1
@@ -153,14 +160,11 @@ impl Cpu32 {
                 match op {
                     JALR => {
                         self.set_reg(inst.rd(), res);
-                        self.pc = a.wrapping_add_signed(imm);
+                        next_pc = a.wrapping_add_signed(imm);
                     }
-                    SYSTEM => {
-                        self.pc = self.pc.wrapping_add(4);
-                    }
+                    SYSTEM => {}
                     _ => {
                         self.set_reg(inst.rd(), res);
-                        self.pc = self.pc.wrapping_add(4);
                     }
                 }
             }
@@ -173,8 +177,6 @@ impl Cpu32 {
                     SH => self.mem.store_half(addr, src as u16),
                     SW => self.mem.store_word(addr, src),
                 }
-
-                self.pc = self.pc.wrapping_add(4);
             }
             B { inst, op } => {
                 let a = self.get_reg(inst.rs1());
@@ -187,11 +189,9 @@ impl Cpu32 {
                     BLTU => a < b,
                     BGEU => a >= b,
                 };
-                self.pc = if taken {
-                    self.pc.wrapping_add_signed(inst.imm())
-                } else {
-                    self.pc.wrapping_add(4)
-                };
+                if taken {
+                    next_pc = self.pc.wrapping_add_signed(inst.imm());
+                }
             }
             U { inst, op } => {
                 let imm = inst.imm();
@@ -200,16 +200,16 @@ impl Cpu32 {
                     AUIPC => self.pc.wrapping_add_signed(imm as i32),
                 };
                 self.set_reg(inst.rd(), res);
-                self.pc = self.pc.wrapping_add(4);
             }
             J { inst, op } => match op {
                 JAL => {
-                    let next_pc = self.pc.wrapping_add(4);
                     self.set_reg(inst.rd(), next_pc);
-                    self.pc = self.pc.wrapping_add_signed(inst.imm());
+                    next_pc = self.pc.wrapping_add_signed(inst.imm());
                 }
             },
         }
+
+        self.pc = next_pc;
     }
 
     pub fn syscall(&mut self, _rs1: u32, imm: i32) {
@@ -217,6 +217,7 @@ impl Cpu32 {
             // ecall
             let a0 = self.get_reg(10);
             let a1 = self.get_reg(11);
+            println!("ecall: {} {}", a0, a1);
             match a0 {
                 1 => print!("{}", a1 as i32),
                 2 => print!("{}", (a1 & 0xff) as u8 as char),
@@ -235,7 +236,10 @@ impl Cpu32 {
                     println!("exit: {}", a1 as i32);
                     self.running = false;
                 }
-                _ => {}
+                _ => {
+                    println!("Unknown syscall: {}", a0);
+                    self.running = false;
+                }
             }
         } else {
             // ebreak

@@ -1,3 +1,24 @@
+macro_rules! width_ty {
+    (i, 32) => {
+        i32
+    };
+    (i, 16) => {
+        i16
+    };
+    (u, 32) => {
+        u32
+    };
+    (u, 16) => {
+        u16
+    };
+    (bits, 16) => {
+        crate::bits16
+    };
+    (bits, 32) => {
+        crate::bits32
+    };
+}
+
 /// Generates const functions to extract bits from a 32-bit integer according
 /// to a specification of the form `[(sigext)? ((end:start | pos) \|)+]`.
 ///
@@ -23,29 +44,29 @@
 /// ```
 macro_rules! bits {
     // Sign-extended extraction
-    ($name:ident: [sigext $($spec:tt)+]) => {
+    ($width: tt, $name:ident: [sigext $($spec:tt)+]) => {
         #[inline(never)]
         #[must_use = "this returns the result of the operation, without modifying the original"]
-        pub const fn $name(&self) -> i32 {
+        pub const fn $name(&self) -> crate::width_ty!(i, $width) {
             let input = self.0;
-            let mut result: u32 = 0;
-            let total_bits = bits!(@count 0, $($spec)+);
-            bits!(@process input, result, total_bits, 0, $($spec)+);
+            let mut result: crate::width_ty!(u, $width) = 0;
+            let total_bits = crate::bits!(@count 0, $($spec)+);
+            crate::bits!(@process $width, input, result, total_bits, 0, $($spec)+);
 
             // sign extend
-            ((((result << (u32::BITS as u8 - total_bits)) as i32) >> (u32::BITS as u8 - total_bits)) as i32)
+            ((((result << (<crate::width_ty!(u, $width)>::BITS as u8 - total_bits)) as crate::width_ty!(i, $width)) >> (<crate::width_ty!(u, $width)>::BITS as u8 - total_bits)) as crate::width_ty!(i, $width))
         }
     };
 
     // Normal extraction
-    ($name:ident: [$($spec:tt)+]) => {
+    ($width:tt, $name:ident: [$($spec:tt)+]) => {
         #[inline(never)]
         #[must_use = "this returns the result of the operation, without modifying the original"]
-        pub const fn $name(&self) -> u32 {
+        pub const fn $name(&self) -> crate::width_ty!(u, $width) {
             let input = self.0;
-            let mut result: u32 = 0;
-            let total_bits = bits!(@count 0, $($spec)+);
-            bits!(@process input, result, total_bits, 0, $($spec)+);
+            let mut result: crate::width_ty!(u, $width) = 0;
+            let total_bits = crate::bits!(@count 0, $($spec)+);
+            crate::bits!(@process $width, input, result, total_bits, 0, $($spec)+);
             result
         }
     };
@@ -58,22 +79,22 @@ macro_rules! bits {
         $acc + $zeros
     };
     (@count $acc:expr, $end:literal : $start:literal | $($rest:tt)+) => {
-        bits!(@count $acc + $end - $start + 1, $($rest)+)
+        crate::bits!(@count $acc + $end - $start + 1, $($rest)+)
     };
 
     // Zero bits
-    (@process $input:ident, $result:ident, $total_bits: ident, $idx:expr, <0 repeat $zeros:literal>) => {};
+    (@process $width:tt, $input:ident, $result:ident, $total_bits: ident, $idx:expr, <0 repeat $zeros:literal>) => {};
 
     // Range Terminal
-    (@process $input:ident, $result:ident, $total_bits: ident, $idx:expr, $end:literal : $start:literal) => {
-        $result |= crate::bits32($input, $start..($end + 1), $total_bits - $idx - ($end - $start + 1));
+    (@process $width:tt, $input:ident, $result:ident, $total_bits: ident, $idx:expr, $end:literal : $start:literal) => {
+        $result |= (crate::width_ty!(bits, $width))($input, $start..($end + 1), $total_bits - $idx - ($end - $start + 1));
     };
 
 
     // Range | ...
-    (@process $input:ident, $result:ident, $total_bits: ident, $idx:expr, $end:literal : $start:literal | $($rest:tt)+) => {
+    (@process $width:tt, $input:ident, $result:ident, $total_bits: ident, $idx:expr, $end:literal : $start:literal | $($rest:tt)+) => {
         $result |= crate::bits32($input, $start..($end + 1), ($total_bits - $idx) - ($end - $start + 1));
-        bits!(@process $input, $result, $total_bits, $idx + ($end - $start + 1), $($rest)+)
+        crate::bits!(@process $width, $input, $result, $total_bits, $idx + ($end - $start + 1), $($rest)+)
     };
 }
 
@@ -82,7 +103,7 @@ macro_rules! mask {
         (((1 << ($end - $start + 1)) - 1) << $start)
     };
     ($start:literal, $end: literal, $($rest:tt)+) => {
-        mask!($start, $end) | mask!($($rest)+)
+        crate::mask!($start, $end) | crate::mask!($($rest)+)
     };
 }
 
@@ -97,6 +118,7 @@ macro_rules! desired {
 
 macro_rules! instruction {
     (
+        $width: tt,
         $mod_name:ident::$type:ident {
             $( $name:ident : $bits:tt, )*
         },
@@ -104,39 +126,51 @@ macro_rules! instruction {
         opcodes {
             // Match e.g. [6:0] == 0x03 => Opcodes::ALU
             // or more than one constraint [6:0] == 0b0110011 && [14:12] == 0x7 => Opcodes::AND
-            $( $([$end:literal : $start:literal] == $opcode:literal)&&+ $(if [$if_end:literal : $if_start:literal] == $if_code:literal)? => $opname:ident, )*
+            $(
+                // Optional cfg feature flag
+                $(#[cfg($cfg:meta)])?
+                // check fields within the mask are as expected
+                $([$end:literal : $start:literal] == $opcode:literal)&&+
+                // Optional constraint that isn't accounted for by the mask
+                $(if $([$if_end:literal : $if_start:literal] $check: tt $if_code:literal)&&+)? => $opname:ident,
+            )*
         }
     ) => {
         #[allow(non_snake_case)]
         mod $mod_name {
             #[derive(PartialEq, Eq)]
-            pub struct $type(pub u32);
+            pub struct $type(pub crate::width_ty!(u, $width));
 
             impl $type {
                 $(
-                    bits!($name: $bits);
+                    crate::bits!($width, $name: $bits);
                 )*
             }
 
             #[derive(Debug, PartialEq, Eq)]
             pub enum Opcode {
                 $(
+                    $(#[cfg($cfg)])?
                     $opname,
                 )*
             }
 
-            const MASK: u32 = mask!( $($mask_start, $mask_end),+ );
-            mod desired {
+            const MASK: crate::width_ty!(u, $width) = crate::mask!( $($mask_start, $mask_end),+ );
+            mod _mask_match {
                 $(
-                    pub const $opname: u32 = $(desired!($opcode, $start)) | +;
+                    $(#[cfg($cfg)])?
+                    pub const $opname: crate::width_ty!(u, $width) = $(crate::desired!($opcode, $start)) | +;
                 )*
             }
 
             impl Opcode {
-                pub const fn decode(inst: u32) -> Option<Self> {
+                pub const fn decode(inst: crate::width_ty!(u, $width)) -> Option<Self> {
                     match inst & MASK {
                         $(
-                            desired::$opname $(if ((inst & mask!($if_start, $if_end)) == desired!($if_code, $if_start)))? => Some(Opcode::$opname),
+                            $(#[cfg($cfg)])?
+                            _mask_match::$opname $(
+                                if $(((inst & crate::mask!($if_start, $if_end)) $check crate::desired!($if_code, $if_start)))&&+
+                            )? => Some(Opcode::$opname),
                         )*
                         _ => None,
                     }
@@ -155,3 +189,5 @@ macro_rules! instruction {
         }
     };
 }
+
+pub(crate) use {bits, desired, instruction, mask, width_ty};

@@ -40,7 +40,7 @@ impl Memory {
     where
         T: Copy,
     {
-        unsafe { *(self.ptr.add(addr as usize) as *const T) }
+        unsafe { (self.ptr.add(addr as usize) as *const T).read_unaligned() }
     }
 
     pub fn load_word(&self, addr: u32) -> u32 {
