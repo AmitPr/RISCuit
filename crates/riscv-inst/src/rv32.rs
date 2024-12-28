@@ -198,11 +198,26 @@ impl Opcode {
             0b11 => Some((option!(Self::decode_32bits(inst)), 4)),
 
             #[cfg(feature = "c")]
-            0b00 => Some((option!(Self::decode_32bits(RISCV_C2G_C0[(inst as u16 >> 2) as usize])), 2)),
+            0b00 => Some((
+                option!(Self::decode_32bits(
+                    RISCV_C2G_C0[(inst as u16 >> 2) as usize]
+                )),
+                2,
+            )),
             #[cfg(feature = "c")]
-            0b01 => Some((option!(Self::decode_32bits(RISCV_C2G_C1[(inst as u16 >> 2) as usize])), 2)),
+            0b01 => Some((
+                option!(Self::decode_32bits(
+                    RISCV_C2G_C1[(inst as u16 >> 2) as usize]
+                )),
+                2,
+            )),
             #[cfg(feature = "c")]
-            0b10 => Some((option!(Self::decode_32bits(RISCV_C2G_C2[(inst as u16 >> 2) as usize])), 2)),
+            0b10 => Some((
+                option!(Self::decode_32bits(
+                    RISCV_C2G_C2[(inst as u16 >> 2) as usize]
+                )),
+                2,
+            )),
 
             #[cfg(not(feature = "c"))]
             0b00 | 0b01 | 0b10 => None,

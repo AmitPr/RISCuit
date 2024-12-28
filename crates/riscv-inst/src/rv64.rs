@@ -39,6 +39,13 @@ instruction! {
         #[cfg(feature="m")] [6:0] == 0b0110011 && [14:12] == 0x5 && [31:25] == 0x01 => DIVU,
         #[cfg(feature="m")] [6:0] == 0b0110011 && [14:12] == 0x6 && [31:25] == 0x01 => REM,
         #[cfg(feature="m")] [6:0] == 0b0110011 && [14:12] == 0x7 && [31:25] == 0x01 => REMU,
+
+        // RV64M extension
+        #[cfg(feature="m")] [6:0] == 0b0111011 && [14:12] == 0x0 && [31:25] == 0x01 => MULW,
+        #[cfg(feature="m")] [6:0] == 0b0111011 && [14:12] == 0x4 && [31:25] == 0x01 => DIVW,
+        #[cfg(feature="m")] [6:0] == 0b0111011 && [14:12] == 0x6 && [31:25] == 0x01 => REMW,
+        #[cfg(feature="m")] [6:0] == 0b0111011 && [14:12] == 0x5 && [31:25] == 0x01 => DIVUW,
+        #[cfg(feature="m")] [6:0] == 0b0111011 && [14:12] == 0x7 && [31:25] == 0x01 => REMUW,
     }
 }
 pub use r::{Opcode as ROpcode, R};
@@ -75,6 +82,7 @@ instruction! {
         [6:0] == 0b0000011 && [14:12] == 0x0 => LB,
         [6:0] == 0b0000011 && [14:12] == 0x1 => LH,
         [6:0] == 0b0000011 && [14:12] == 0x2 => LW,
+        [6:0] == 0b0000011 && [14:12] == 0x3 => LD,
         [6:0] == 0b0000011 && [14:12] == 0x4 => LBU,
         [6:0] == 0b0000011 && [14:12] == 0x5 => LHU,
 
@@ -173,7 +181,7 @@ pub use crate::rv_c::{RISCV_C2G_C0, RISCV_C2G_C1, RISCV_C2G_C2};
 impl Opcode {
     pub const fn decode_32bits(inst: u32) -> Option<Self> {
         match inst & 0x7f {
-            0b0110011 => match ROpcode::decode(inst) {
+            0b0110011 | 0b0111011 => match ROpcode::decode(inst) {
                 Some(op) => Some(Opcode::R { inst: R(inst), op }),
                 None => None,
             },
