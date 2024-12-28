@@ -1,6 +1,6 @@
 [workspace]
-members = ["vm", "crates/*", "riscv/guest_std"]
-exclude = ["riscv/guest", "riscv/guest_std"]
+members = ["vm", "crates/*"]
+exclude = ["riscv/*"]
 resolver = "2"
 
 [workspace.dependencies]
