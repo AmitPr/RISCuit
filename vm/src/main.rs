@@ -1,9 +1,8 @@
 mod cpu;
 mod elf;
 mod memory;
-mod memory64;
 
-use cpu::Cpu;
+use cpu::Cpu32;
 use elf::load_elf;
 
 fn main() {
@@ -14,9 +13,9 @@ fn main() {
     }
     let elf_path = &args[1];
 
-    let mut cpu = Cpu::new();
+    let mut cpu = Cpu32::new();
     let entry = load_elf(&mut cpu, elf_path);
-    cpu.pc = entry as u64;
+    cpu.pc = entry;
 
     println!("Starting at 0x{:08x}", entry);
     cpu.run();
