@@ -1,0 +1,16 @@
+[package]
+name = "guest_std"
+version = "0.1.0"
+edition = "2021"
+
+[profile.release]
+opt-level = 'z'
+debug = false
+rpath = false
+debug-assertions = false
+codegen-units = 1
+panic = 'abort'
+incremental = false
+overflow-checks = true
+
+[dependencies]

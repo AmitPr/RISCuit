@@ -1,3 +1,6 @@
 {
     "rust-analyzer.cargo.buildScripts.enable": true,
+    "lldb.displayFormat": "auto",
+    "lldb.dereferencePointers": true,
+    "lldb.consoleMode": "commands",
 }
