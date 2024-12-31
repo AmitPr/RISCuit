@@ -1,3 +1,4 @@
+pub mod lookup;
 mod macros;
 pub mod rv32;
 pub mod rv64;

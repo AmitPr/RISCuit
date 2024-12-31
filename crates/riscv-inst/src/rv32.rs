@@ -226,3 +226,7 @@ impl Opcode {
         }
     }
 }
+
+pub fn iopdecode(inst: u32) -> IOpcode {
+    IOpcode::decode(inst).unwrap()
+}
