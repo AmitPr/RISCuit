@@ -65,21 +65,3 @@ impl Parse for Extension {
             .map_err(|_| syn::Error::new(lit_str.span(), "Unknown extension"))
     }
 }
-
-pub fn isa_inherits_from(base: Base) -> Vec<Base> {
-    match base {
-        Base::RV32I => vec![Base::RV32I],
-        Base::RV64I => vec![Base::RV64I, Base::RV32I],
-        Base::RV128I => vec![Base::RV128I, Base::RV64I, Base::RV32I],
-        _ => panic!("Unknown ISA: {:?}", base),
-    }
-}
-
-pub fn resolve_active_isas(base: Base, extensions: Vec<Extension>) -> Vec<(Base, Extension)> {
-    let required_bases = isa_inherits_from(base);
-    // required_bases X extensions
-    required_bases
-        .iter()
-        .flat_map(|base| std::iter::repeat(*base).zip(extensions.iter().copied()))
-        .collect::<Vec<_>>()
-}

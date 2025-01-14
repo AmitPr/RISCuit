@@ -6,8 +6,9 @@ use std::{cmp::Ordering, str::FromStr};
 
 use fields::operand_accessor_fn;
 use proc_macro::TokenStream;
+use proc_macro2::Span;
 use quote::quote;
-use syn::{parse::Parse, parse_macro_input, punctuated::Punctuated, Token, Variant};
+use syn::{parse::Parse, parse_macro_input, punctuated::Punctuated, LitInt, Token, Variant};
 
 use bits::{BitInput, RangeType};
 
@@ -16,7 +17,7 @@ pub fn bits(input: TokenStream) -> TokenStream {
     let BitInput { sign_extend, field } = parse_macro_input!(input as BitInput);
     let name = field.name;
 
-    let total_width = field.ranges.iter().map(|range| range.width()).sum::<u8>();
+    let total_width = field.ranges.iter().map(|range| range.width()).sum::<u8>() as usize;
 
     let mut pos = 0;
     let masks = field
@@ -24,55 +25,38 @@ pub fn bits(input: TokenStream) -> TokenStream {
         .iter()
         .rev()
         .map(|selector| match selector {
-            RangeType::Range(range) => {
+            // Shift the input to the correct position and then apply a positioned mask
+            RangeType::Range { start, .. } => {
                 // Place mask in the correct position
-                let mask = 1u32
-                    .wrapping_shl(range.width() as _)
-                    .wrapping_sub(1)
-                    .wrapping_shl(pos as _);
-                let mask = format!(
-                    "0b{mask:0width$b}",
-                    mask = mask,
-                    width = total_width as usize
-                );
+                let mask = ((1u32 << selector.width()) - 1) << pos;
+                let mask = format!("0b{mask:0total_width$b}",);
                 let mask = syn::LitInt::new(&mask, proc_macro2::Span::call_site());
 
                 // Calculate shift before applying mask
-                let shift = match range.start().cmp(&pos) {
+                let shift = match start.cmp(&pos) {
                     Ordering::Less => {
-                        let shift = pos - range.start();
+                        let shift = pos - start;
                         quote! { (#name << #shift) }
                     }
                     Ordering::Equal => quote! { #name },
                     Ordering::Greater => {
-                        let shift = range.start() - pos;
+                        let shift = start - pos;
                         quote! { (#name >> #shift) }
                     }
                 };
-                pos += range.width();
+                pos += selector.width();
 
                 quote! { (#shift & #mask) }
             }
+            // Pad the input with the specified number of bits of the specified value
             RangeType::Padding { value, count } => {
                 // Create a mask with the specified number of bits
-                let mask = if *value {
-                    if *count >= 32 {
-                        0xFFFFFFFF
-                    } else {
-                        1u32.wrapping_shl(*count as _) - 1
-                    }
-                } else {
-                    0
-                };
-                let mask = format!(
-                    "0b{mask:0width$b}",
-                    mask = mask,
-                    width = total_width as usize
-                );
-                let mask = syn::LitInt::new(&mask, proc_macro2::Span::call_site());
+                let value = if *value { (1u32 << *count) - 1 } else { 0 };
+                let padding = format!("0b{value:0total_width$b}");
+                let padding = LitInt::new(&padding, Span::call_site());
                 pos += count;
 
-                quote! { #mask }
+                quote! { #padding }
             }
         })
         .collect::<Vec<_>>();
@@ -165,6 +149,7 @@ impl Parse for Field {
 struct Opcode {
     fields: Vec<Field>,
     name: syn::Ident,
+    #[allow(dead_code)]
     isa: Option<isa::Base>,
     extension: Option<isa::Extension>,
 }

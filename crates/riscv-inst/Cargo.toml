@@ -12,4 +12,4 @@ c = []
 riscv-inst-macros.workspace = true
 
 [build-dependencies]
-riscv-c-tables = { path = "../riscv-c-tables" }
+riscv-c-tables.workspace = true

@@ -5,7 +5,10 @@ use syn::{
 };
 
 pub enum RangeType {
-    Range(BitRange),
+    Range {
+        start: u8,
+        end: u8,
+    },
     Padding {
         /// true for 1, false for 0
         value: bool,
@@ -24,7 +27,20 @@ impl Parse for RangeType {
             let count = if input.peek(Token![*]) {
                 input.parse::<Token![*]>()?;
                 let count: LitInt = input.parse()?;
-                count.base10_parse::<u8>()?
+                let count_int = count.base10_parse::<u8>()?;
+                if count_int == 0 {
+                    return Err(syn::Error::new(
+                        count.span(),
+                        "Padding count must be greater than 0",
+                    ));
+                }
+                if count_int >= 32 {
+                    return Err(syn::Error::new(
+                        count.span(),
+                        "Padding count must be less than 32",
+                    ));
+                }
+                count_int
             } else {
                 1
             };
@@ -34,7 +50,28 @@ impl Parse for RangeType {
                 count,
             })
         } else {
-            Ok(Self::Range(input.parse()?))
+            let end = input.parse::<LitInt>()?;
+            let start = if input.peek(Token![:]) {
+                input.parse::<Token![:]>()?;
+                input.parse()?
+            } else {
+                end.clone()
+            };
+            let start_int = start.base10_parse::<u8>()?;
+            let end_int = end.base10_parse::<u8>()?;
+            match (start_int, end_int) {
+                (0..=31, 0..=31) if start_int <= end_int => Ok(()),
+                (_, _) if start_int > end_int => {
+                    Err(syn::Error::new(start.span(), "LSB is greater than MSB"))
+                }
+                (0..=31, _) => Err(syn::Error::new(end.span(), "LSB must be in [0,31]")),
+                (_, 0..=31) => Err(syn::Error::new(start.span(), "MSB must be in [0,31]")),
+                _ => Err(syn::Error::new(start.span(), "Range must be in [0,31]")),
+            }?;
+            Ok(Self::Range {
+                start: start.base10_parse()?,
+                end: end.base10_parse()?,
+            })
         }
     }
 }
@@ -42,39 +79,9 @@ impl Parse for RangeType {
 impl RangeType {
     pub fn width(&self) -> u8 {
         match self {
-            Self::Range(range) => range.width(),
+            Self::Range { start, end } => end - start + 1,
             Self::Padding { count, .. } => *count,
         }
-    }
-}
-
-pub struct BitRange {
-    end: LitInt,
-    start: LitInt,
-}
-
-impl Parse for BitRange {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let end: LitInt = input.parse()?;
-        let start = if input.peek(Token![:]) {
-            input.parse::<Token![:]>()?;
-            input.parse()?
-        } else {
-            end.clone()
-        };
-        Ok(BitRange { end, start })
-    }
-}
-
-impl BitRange {
-    pub fn start(&self) -> u8 {
-        self.start.base10_parse::<u8>().unwrap()
-    }
-    pub fn end(&self) -> u8 {
-        self.end.base10_parse::<u8>().unwrap()
-    }
-    pub fn width(&self) -> u8 {
-        self.end() - self.start() + 1
     }
 }
 

@@ -68,11 +68,15 @@ pub fn operand_accessor(name: &str) -> TokenStream {
         "cimmlwsp" => quote! { ::riscv_inst_macros::bits!(inst[3:2 | 12 | 6:4 | +0*2]) },
         "cimmldsp" => quote! { ::riscv_inst_macros::bits!(inst[3:2 | 12 | 6:4 | +0*3]) },
         "cimmlqsp" => quote! { ::riscv_inst_macros::bits!(inst[3:2 | 12 | 6:4 | +0*4]) },
-        "cimm16sp" => quote! { ::riscv_inst_macros::bits!(sign, inst[12 | 4:3 | 5 | 2 | 6 | +0*4]) },
-        //12:2[11|4|9:8|10|6|7|3:1|5]
-        "cimmj" => quote! { ::riscv_inst_macros::bits!(sign, inst[12 | 8 | 10:9 | 6 | 7 | 5:3 | 2 | +0 ]) },
-        //12:10[8|4:3],6:2[7:6|2:1|5]
-        "cimmb" => quote! { ::riscv_inst_macros::bits!(sign, inst[12 | 6:5 | 2 | 11:10 | 4:3 | +0 ]) },
+        "cimm16sp" => {
+            quote! { ::riscv_inst_macros::bits!(sign, inst[12 | 4:3 | 5 | 2 | 6 | +0*4]) }
+        }
+        "cimmj" => {
+            quote! { ::riscv_inst_macros::bits!(sign, inst[12 | 8 | 10:9 | 6 | 7 | 5:3 | 2 | +0 ]) }
+        }
+        "cimmb" => {
+            quote! { ::riscv_inst_macros::bits!(sign, inst[12 | 6:5 | 2 | 11:10 | 4:3 | +0 ]) }
+        }
         "cimmswsp" => quote! { ::riscv_inst_macros::bits!(inst[8:7 | 12:9 | +0*2]) },
         "cimmsdsp" => quote! { ::riscv_inst_macros::bits!(inst[8:7 | 12:9 | +0*3]) },
         "cimmsqsp" => quote! { ::riscv_inst_macros::bits!(inst[8:7 | 12:9 | +0*4]) },
