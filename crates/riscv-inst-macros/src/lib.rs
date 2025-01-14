@@ -2,12 +2,12 @@ mod bits;
 mod fields;
 mod isa;
 
-use std::cmp::Ordering;
+use std::{cmp::Ordering, str::FromStr};
 
 use fields::operand_accessor_fn;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse::Parse, parse_macro_input, punctuated::Punctuated, Path, Token, Variant};
+use syn::{parse::Parse, parse_macro_input, punctuated::Punctuated, Token, Variant};
 
 use bits::{BitInput, RangeType};
 
@@ -143,25 +143,92 @@ pub fn instructions(_: TokenStream, input: TokenStream) -> TokenStream {
     code.into()
 }
 
+#[derive(Debug, Clone)]
+struct Field {
+    field: syn::Ident,
+    alias: Option<syn::Ident>,
+}
+
+impl Parse for Field {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let field = input.parse()?;
+        let alias = if input.peek(Token![as]) {
+            input.parse::<Token![as]>()?;
+            Some(input.parse()?)
+        } else {
+            None
+        };
+        Ok(Field { field, alias })
+    }
+}
+
 struct Opcode {
-    fields: Vec<syn::Ident>,
+    fields: Vec<Field>,
     name: syn::Ident,
+    isa: Option<isa::Base>,
+    extension: Option<isa::Extension>,
 }
 
 impl Opcode {
     pub fn new(variant: Variant) -> syn::Result<Self> {
         let mut fields = Vec::new();
+        let mut isa = None;
+        let mut extension = None;
         for attr in &variant.attrs {
             let list = attr.meta.require_list()?;
             if attr.path().is_ident("fields") {
-                let paths: Punctuated<Path, syn::Token![,]> =
-                    list.parse_args_with(Punctuated::parse_terminated)?;
-                let as_idents = paths
-                    .iter()
-                    .map(|p| p.require_ident().cloned())
-                    .collect::<syn::Result<_>>()?;
-                fields = as_idents;
+                fields = list
+                    .parse_args_with(Punctuated::<Field, syn::Token![,]>::parse_terminated)?
+                    .into_iter()
+                    .collect();
             } else if attr.path().is_ident("isa") {
+                // Parse #[isa(base = "BASE", ext = "EXT")]
+                let fields: Punctuated<syn::MetaNameValue, syn::Token![,]> =
+                    list.parse_args_with(Punctuated::parse_terminated)?;
+                for field in fields {
+                    match field.path.get_ident() {
+                        Some(ident) if ident == "base" => {
+                            if let syn::Expr::Lit(syn::ExprLit {
+                                lit: syn::Lit::Str(lit),
+                                ..
+                            }) = field.value
+                            {
+                                isa = Some(
+                                    isa::Base::from_str(lit.value().as_str())
+                                        .map_err(|e| syn::Error::new_spanned(lit, e))?,
+                                );
+                            } else {
+                                return Err(syn::Error::new_spanned(
+                                    field,
+                                    "Expected a string literal",
+                                ));
+                            };
+                        }
+                        Some(ident) if ident == "ext" => {
+                            if let syn::Expr::Lit(syn::ExprLit {
+                                lit: syn::Lit::Str(lit),
+                                ..
+                            }) = field.value
+                            {
+                                extension = Some(
+                                    isa::Extension::from_str(lit.value().as_str())
+                                        .map_err(|e| syn::Error::new_spanned(lit, e))?,
+                                );
+                            } else {
+                                return Err(syn::Error::new_spanned(
+                                    field,
+                                    "Expected a string literal",
+                                ));
+                            };
+                        }
+                        _ => {
+                            return Err(syn::Error::new_spanned(
+                                field.path,
+                                "Unknown field, expected `base` or `ext`",
+                            ));
+                        }
+                    }
+                }
             } else {
                 return Err(syn::Error::new_spanned(
                     attr,
@@ -172,11 +239,17 @@ impl Opcode {
         Ok(Opcode {
             fields,
             name: variant.ident,
+            isa,
+            extension,
         })
     }
 
     pub fn codegen_struct(&self) -> proc_macro2::TokenStream {
         let name = self.name.clone();
+        let inner = match self.extension {
+            Some(isa::Extension::C) => quote! { u16 },
+            _ => quote! { u32 },
+        };
 
         let field_accessors = self
             .fields
@@ -185,9 +258,26 @@ impl Opcode {
             .map(operand_accessor_fn)
             .collect::<proc_macro2::TokenStream>();
 
+        let fields_string = self
+            .fields
+            .iter()
+            .map(|f| {
+                f.alias
+                    .as_ref()
+                    .unwrap_or(&f.field)
+                    .to_string()
+                    .to_ascii_lowercase()
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let debug_impl = self.codegen_debug_impl();
+        let display_impl = self.codegen_display_impl();
+
         let as_struct = quote! {
-            #[derive(Debug, PartialEq, Eq)]
-            pub struct #name;
+            #[derive(PartialEq, Eq)]
+            #[doc = stringify!(#fields_string)]
+            pub struct #name(pub #inner);
 
             impl #name {
                 #field_accessors
@@ -198,8 +288,63 @@ impl Opcode {
                     Opcode::#name(self)
                 }
             }
+
+            #debug_impl
+            #display_impl
         };
 
         as_struct
+    }
+
+    /// Converts the Pascal Case `name` to the instruction as if in disassembler
+    pub fn name_to_inst(&self) -> String {
+        let mut sections = vec![];
+        for c in self.name.to_string().chars() {
+            if c.is_uppercase() {
+                sections.push(vec![]);
+            }
+            sections.last_mut().unwrap().push(c);
+        }
+        sections
+            .iter()
+            .map(|s| s.iter().collect::<String>().to_lowercase())
+            .collect::<Vec<_>>()
+            .join(".")
+    }
+
+    pub fn codegen_debug_impl(&self) -> proc_macro2::TokenStream {
+        let name = self.name.clone();
+        let fields = self
+            .fields
+            .iter()
+            .map(|f| f.alias.as_ref().unwrap_or(&f.field));
+        quote! {
+            impl std::fmt::Debug for #name {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    f.debug_struct(stringify!(#name))
+                        .field("inst", &self.0)
+                        #( .field(stringify!(#fields), &self.#fields()) )*
+                        .finish()
+                }
+            }
+        }
+    }
+
+    pub fn codegen_display_impl(&self) -> proc_macro2::TokenStream {
+        let name = self.name.clone();
+        let fields = self
+            .fields
+            .iter()
+            .map(|f| f.alias.as_ref().unwrap_or(&f.field));
+        let inst = self.name_to_inst();
+        quote! {
+            impl std::fmt::Display for #name {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    write!(f, #inst)?;
+                    #( write!(f, " {}", self.#fields())?; )*
+                    Ok(())
+                }
+            }
+        }
     }
 }

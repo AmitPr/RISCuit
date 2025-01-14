@@ -1,6 +1,8 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
+use crate::Field;
+
 pub fn get_operand_type(name: &str) -> TokenStream {
     match name {
         // Immediates that are signed
@@ -11,6 +13,9 @@ pub fn get_operand_type(name: &str) -> TokenStream {
 
         // Flags
         "aq" | "rl" => quote! { bool },
+
+        // Compressed
+        "crd0" => quote! { bool },
 
         // Everything else defaults to u32
         _ => quote! { u32 },
@@ -83,12 +88,15 @@ pub fn operand_accessor(name: &str) -> TokenStream {
     }
 }
 
-pub fn operand_accessor_fn(operand: syn::Ident) -> TokenStream {
-    let operand_name = operand.to_string();
+pub fn operand_accessor_fn(operand: Field) -> TokenStream {
+    let operand_name = operand.field.to_string();
     let operand_type = get_operand_type(&operand_name);
     let operand_accessor = operand_accessor(&operand_name);
+    let operand_fn_name = operand.alias.unwrap_or(operand.field);
     quote! {
-        pub const fn #operand(inst: u32) -> #operand_type {
+        #[inline]
+        pub const fn #operand_fn_name(&self) -> #operand_type {
+            let inst = self.0 as u32;
             #operand_accessor
         }
     }

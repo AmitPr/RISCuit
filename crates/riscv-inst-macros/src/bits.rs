@@ -1,6 +1,6 @@
 use syn::{
     bracketed,
-    parse::{Parse, ParseStream, Peek},
+    parse::{Parse, ParseStream},
     LitInt, Result, Token,
 };
 

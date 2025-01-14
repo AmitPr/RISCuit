@@ -22,11 +22,11 @@ pub fn load_elf(cpu: &mut Cpu32, path: &str) -> u32 {
             );
             for i in 0..(phdr.p_filesz as usize) {
                 let byte = file_data[file_start + i];
-                cpu.mem.store_byte(vaddr + i as u32, byte);
+                cpu.mem.store::<u8>(vaddr + i as u32, byte);
             }
             // If p_memsz > p_filesz, zero out the rest
             for i in (phdr.p_filesz as usize)..(phdr.p_memsz as usize) {
-                cpu.mem.store_byte(vaddr + i as u32, 0);
+                cpu.mem.store::<u8>(vaddr + i as u32, 0);
             }
         }
     }

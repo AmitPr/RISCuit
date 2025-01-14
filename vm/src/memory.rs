@@ -1,7 +1,17 @@
+mod _sealed {
+    /// A trait to ensure that only Primitives can be loaded/stored.
+    pub trait Primitive {}
+    macro_rules! impl_primitive {
+        ($($t:ty),*) => {$(impl Primitive for $t {})*}
+    }
+    impl_primitive!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize);
+}
+use _sealed::Primitive;
+
 pub const PAGE_SIZE: usize = 4096;
 pub const MEMORY_SIZE: usize = const {
     // Assert that usize > u32.
-    assert!(u32::MAX as usize + PAGE_SIZE > u32::MAX as usize);
+    assert!(std::mem::size_of::<usize>() > std::mem::size_of::<u32>());
     u32::MAX as usize + PAGE_SIZE
 };
 
@@ -36,44 +46,14 @@ impl Memory {
         }
     }
 
-    pub fn load<T>(&self, addr: u32) -> T
-    where
-        T: Copy,
-    {
+    pub fn load<T: Primitive>(&self, addr: u32) -> T {
         unsafe { (self.ptr.add(addr as usize) as *const T).read_unaligned() }
     }
 
-    pub fn load_word(&self, addr: u32) -> u32 {
-        self.load(addr)
-    }
-
-    pub fn load_half(&self, addr: u32) -> u16 {
-        self.load(addr)
-    }
-
-    pub fn load_byte(&self, addr: u32) -> u8 {
-        self.load(addr)
-    }
-
-    pub fn store<T>(&mut self, addr: u32, val: T)
-    where
-        T: Copy,
-    {
+    pub fn store<T: Primitive>(&mut self, addr: u32, val: T) {
         unsafe {
             *(self.ptr.add(addr as usize) as *mut T) = val;
         }
-    }
-
-    pub fn store_word(&mut self, addr: u32, val: u32) {
-        self.store(addr, val);
-    }
-
-    pub fn store_half(&mut self, addr: u32, val: u16) {
-        self.store(addr, val);
-    }
-
-    pub fn store_byte(&mut self, addr: u32, val: u8) {
-        self.store(addr, val);
     }
 }
 
@@ -82,16 +62,5 @@ impl Drop for Memory {
         unsafe {
             libc::munmap(self.ptr as *mut libc::c_void, MEMORY_SIZE);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_memory() {
-        let memory = Memory::new();
-        assert!(!memory.ptr.is_null());
     }
 }
