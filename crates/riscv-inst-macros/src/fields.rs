@@ -1,8 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::Field;
-
 pub fn get_operand_type(name: &str) -> TokenStream {
     match name {
         // Immediates that are signed
@@ -19,6 +17,19 @@ pub fn get_operand_type(name: &str) -> TokenStream {
 
         // Everything else defaults to u32
         _ => quote! { u32 },
+    }
+}
+
+pub fn operand_accessor_name(name: &str) -> &str {
+    match name {
+        // Immediates
+        "imm20" | "oimm20" | "jimm20" | "imm12" | "oimm12" | "csr12" | "simm12" | "sbimm12"
+        | "zimm" => "imm",
+
+        // shamt
+        "shamt5" | "shamt6" | "shamt7" => "shamt",
+
+        _ => name,
     }
 }
 
@@ -52,11 +63,11 @@ pub fn operand_accessor(name: &str) -> TokenStream {
 
         // Compressed
         "crd0" => quote! { ::riscv_inst_macros::bits!(inst[12]) != 0 },
-        "crdq" | "crs2q" => quote! { ::riscv_inst_macros::bits!(inst[4:2]) },
-        "crs1q" | "crs1rdq" => quote! { ::riscv_inst_macros::bits!(inst[9:7]) },
+        "crdq" | "crs2q" => quote! { ::riscv_inst_macros::bits!(inst[4:2]) + 8 },
+        "crs1q" | "crs1rdq" => quote! { ::riscv_inst_macros::bits!(inst[9:7]) + 8 },
         "crd" | "crs1" | "crs1rd" => quote! { ::riscv_inst_macros::bits!(inst[11:7]) },
         "crs2" => quote! { ::riscv_inst_macros::bits!(inst[6:2]) },
-        "cfrdq" | "cfrs2q" => quote! { ::riscv_inst_macros::bits!(inst[4:2]) },
+        "cfrdq" | "cfrs2q" => quote! { ::riscv_inst_macros::bits!(inst[4:2]) + 8 },
         "cfrs2" => quote! { ::riscv_inst_macros::bits!(inst[6:2]) },
         "cfrd" => quote! { ::riscv_inst_macros::bits!(inst[11:7]) },
 
@@ -72,7 +83,8 @@ pub fn operand_accessor(name: &str) -> TokenStream {
             quote! { ::riscv_inst_macros::bits!(sign, inst[12 | 4:3 | 5 | 2 | 6 | +0*4]) }
         }
         "cimmj" => {
-            quote! { ::riscv_inst_macros::bits!(sign, inst[12 | 8 | 10:9 | 6 | 7 | 5:3 | 2 | +0 ]) }
+            //12:2[11|4|9:8|10|6|7|3:1|5]
+            quote! { ::riscv_inst_macros::bits!(sign, inst[12 | 8 | 10:9 | 6 | 7 | 2 | 11 | 5:3 | +0]) }
         }
         "cimmb" => {
             quote! { ::riscv_inst_macros::bits!(sign, inst[12 | 6:5 | 2 | 11:10 | 4:3 | +0 ]) }
@@ -80,7 +92,9 @@ pub fn operand_accessor(name: &str) -> TokenStream {
         "cimmswsp" => quote! { ::riscv_inst_macros::bits!(inst[8:7 | 12:9 | +0*2]) },
         "cimmsdsp" => quote! { ::riscv_inst_macros::bits!(inst[8:7 | 12:9 | +0*3]) },
         "cimmsqsp" => quote! { ::riscv_inst_macros::bits!(inst[8:7 | 12:9 | +0*4]) },
-        "cimm4spn" => quote! { ::riscv_inst_macros::bits!(inst[10:7 | 12:11 | 5 | 6 | +0*2]) },
+        "cimm4spn" => {
+            quote! { ::riscv_inst_macros::bits!(inst[10:7 | 12:11 | 5 | 6 | +0*2]) }
+        }
         "cimmw" => quote! { ::riscv_inst_macros::bits!(inst[5 | 12:10 | 6 | +0*2]) },
         "cimmd" => quote! { ::riscv_inst_macros::bits!(inst[6:5 | 12:10 | +0*3]) },
         "cimmq" => quote! { ::riscv_inst_macros::bits!(inst[10 | 6:5 | 12:11 | +0*4]) },
@@ -92,11 +106,11 @@ pub fn operand_accessor(name: &str) -> TokenStream {
     }
 }
 
-pub fn operand_accessor_fn(operand: Field) -> TokenStream {
-    let operand_name = operand.field.to_string();
+pub fn operand_accessor_fn(operand: syn::Ident) -> TokenStream {
+    let operand_name = operand.to_string();
     let operand_type = get_operand_type(&operand_name);
     let operand_accessor = operand_accessor(&operand_name);
-    let operand_fn_name = operand.alias.unwrap_or(operand.field);
+    let operand_fn_name = syn::Ident::new(operand_accessor_name(&operand_name), operand.span());
     quote! {
         #[inline]
         pub const fn #operand_fn_name(&self) -> #operand_type {

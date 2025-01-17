@@ -1,12 +1,3 @@
-// use crate::rv32::{
-//     BOpcode::*,
-//     IOpcode::*,
-//     JOpcode::*,
-//     Opcode::{self, *},
-//     ROpcode::*,
-//     SOpcode::*,
-//     UOpcode::*,
-// };
 use crate::lookup::*;
 
 // Tests derived from riscv-tests (https://github.com/riscv/riscv-tests)

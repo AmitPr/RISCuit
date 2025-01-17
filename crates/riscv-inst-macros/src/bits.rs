@@ -11,9 +11,9 @@ pub enum RangeType {
     },
     Padding {
         /// true for 1, false for 0
-        value: bool,
+        bit: bool,
         /// number of padding bits
-        count: u8,
+        width: u8,
     },
 }
 
@@ -46,8 +46,8 @@ impl Parse for RangeType {
             };
 
             Ok(Self::Padding {
-                value: bit_value,
-                count,
+                bit: bit_value,
+                width: count,
             })
         } else {
             let end = input.parse::<LitInt>()?;
@@ -80,7 +80,7 @@ impl RangeType {
     pub fn width(&self) -> u8 {
         match self {
             Self::Range { start, end } => end - start + 1,
-            Self::Padding { count, .. } => *count,
+            Self::Padding { width: count, .. } => *count,
         }
     }
 }

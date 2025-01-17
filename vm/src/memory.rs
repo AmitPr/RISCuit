@@ -22,6 +22,7 @@ pub const MEMORY_SIZE: usize = const {
 /// without bounds-checking.
 pub struct Memory {
     ptr: *mut u8,
+    pub brk: u32,
 }
 
 impl Memory {
@@ -43,6 +44,7 @@ impl Memory {
 
         Self {
             ptr: ptr as *mut u8,
+            brk: 0x1000000, // 16MB
         }
     }
 
@@ -54,6 +56,14 @@ impl Memory {
         unsafe {
             *(self.ptr.add(addr as usize) as *mut T) = val;
         }
+    }
+
+    pub fn pointer(&self, addr: u32) -> *mut u8 {
+        unsafe { self.ptr.add(addr as usize) }
+    }
+
+    pub fn host_to_guest_ptr(&self, ptr: *const u8) -> u32 {
+        ptr as u32 - self.ptr as u32
     }
 }
 

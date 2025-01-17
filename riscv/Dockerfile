@@ -1,10 +1,10 @@
-FROM rustlang/rust:nightly-slim as builder
+FROM rustlang/rust:nightly-slim AS builder
 
 # TODO: Variables instead of hardcoding
 
 # Dependencies
 RUN apt-get update
-RUN apt get install -y \
+RUN apt-get install -y \
     gcc-riscv64-linux-gnu \
     binutils-riscv64-linux-gnu \
     autoconf \
@@ -52,8 +52,8 @@ COPY riscv32imac-unknown-linux-gnu.json /opt/rust/
 
 # Build the project
 WORKDIR /code
-RUN cargo +nightly build --release \
+ENTRYPOINT cargo +nightly build --release \
     -Z build-std=core,alloc,std,panic_abort \
     -Z build-std-features=optimize_for_size \
-    --target /opt/rust/riscv32gc-unknown-linux-gnu.json \
-    --config target.riscv32imac-unknown-linux-gnu.linker=riscv32-unknown-linux-gnu-gcc
+    --target /opt/rust/riscv32imac-unknown-linux-gnu.json \
+    --config target.riscv32imac-unknown-linux-gnu.linker=\"riscv32-unknown-linux-gnu-gcc\"

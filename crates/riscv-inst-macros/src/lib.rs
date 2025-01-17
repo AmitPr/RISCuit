@@ -2,9 +2,9 @@ mod bits;
 mod fields;
 mod isa;
 
-use std::{cmp::Ordering, str::FromStr};
+use std::str::FromStr;
 
-use fields::operand_accessor_fn;
+use fields::{operand_accessor_fn, operand_accessor_name};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
@@ -14,49 +14,45 @@ use bits::{BitInput, RangeType};
 
 #[proc_macro]
 pub fn bits(input: TokenStream) -> TokenStream {
+    let mask = |width: u8| (1u32 << width) - 1;
     let BitInput { sign_extend, field } = parse_macro_input!(input as BitInput);
     let name = field.name;
 
     let total_width = field.ranges.iter().map(|range| range.width()).sum::<u8>() as usize;
 
     let mut pos = 0;
-    let masks = field
-        .ranges
-        .iter()
-        .rev()
-        .map(|selector| match selector {
+    let rev = field.ranges.into_iter().rev();
+    let masks = rev
+        .filter_map(|range| match range {
             // Shift the input to the correct position and then apply a positioned mask
             RangeType::Range { start, .. } => {
                 // Place mask in the correct position
-                let mask = ((1u32 << selector.width()) - 1) << pos;
-                let mask = format!("0b{mask:0total_width$b}",);
+                let mask = format!("0b{mask:0total_width$b}", mask = mask(range.width()) << pos);
                 let mask = syn::LitInt::new(&mask, proc_macro2::Span::call_site());
 
                 // Calculate shift before applying mask
-                let shift = match start.cmp(&pos) {
-                    Ordering::Less => {
-                        let shift = pos - start;
-                        quote! { (#name << #shift) }
-                    }
-                    Ordering::Equal => quote! { #name },
-                    Ordering::Greater => {
-                        let shift = start - pos;
-                        quote! { (#name >> #shift) }
-                    }
+                let shift = if start > pos {
+                    let shift = start - pos;
+                    quote! { (#name >> #shift) }
+                } else {
+                    let shift = pos - start;
+                    quote! { (#name << #shift) }
                 };
-                pos += selector.width();
+                pos += range.width();
 
-                quote! { (#shift & #mask) }
+                Some(quote! { (#shift & #mask) })
             }
             // Pad the input with the specified number of bits of the specified value
-            RangeType::Padding { value, count } => {
-                // Create a mask with the specified number of bits
-                let value = if *value { (1u32 << *count) - 1 } else { 0 };
-                let padding = format!("0b{value:0total_width$b}");
-                let padding = LitInt::new(&padding, Span::call_site());
-                pos += count;
-
-                quote! { #padding }
+            RangeType::Padding { bit, width } => {
+                pos += width;
+                if bit {
+                    // Create a mask with the specified number of bits
+                    let padding = format!("0b{pad:0total_width$b}", pad = mask(width));
+                    let padding = LitInt::new(&padding, Span::call_site());
+                    Some(quote! { #padding })
+                } else {
+                    None
+                }
             }
         })
         .collect::<Vec<_>>();
@@ -65,7 +61,10 @@ pub fn bits(input: TokenStream) -> TokenStream {
     if sign_extend {
         // shift so high bit is in position 31, convert to i32, and shift back
         let shift = 32 - total_width;
-        quote! { (((#value << #shift) as i32) >> #shift) }
+        quote! { {
+            let val = #value;
+            ((val << #shift) as i32) >> #shift
+        } }
     } else {
         value
     }
@@ -127,27 +126,8 @@ pub fn instructions(_: TokenStream, input: TokenStream) -> TokenStream {
     code.into()
 }
 
-#[derive(Debug, Clone)]
-struct Field {
-    field: syn::Ident,
-    alias: Option<syn::Ident>,
-}
-
-impl Parse for Field {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let field = input.parse()?;
-        let alias = if input.peek(Token![as]) {
-            input.parse::<Token![as]>()?;
-            Some(input.parse()?)
-        } else {
-            None
-        };
-        Ok(Field { field, alias })
-    }
-}
-
 struct Opcode {
-    fields: Vec<Field>,
+    fields: Vec<syn::Ident>,
     name: syn::Ident,
     #[allow(dead_code)]
     isa: Option<isa::Base>,
@@ -163,7 +143,7 @@ impl Opcode {
             let list = attr.meta.require_list()?;
             if attr.path().is_ident("fields") {
                 fields = list
-                    .parse_args_with(Punctuated::<Field, syn::Token![,]>::parse_terminated)?
+                    .parse_args_with(Punctuated::<syn::Ident, syn::Token![,]>::parse_terminated)?
                     .into_iter()
                     .collect();
             } else if attr.path().is_ident("isa") {
@@ -247,11 +227,9 @@ impl Opcode {
             .fields
             .iter()
             .map(|f| {
-                f.alias
-                    .as_ref()
-                    .unwrap_or(&f.field)
-                    .to_string()
+                operand_accessor_name(&f.to_string())
                     .to_ascii_lowercase()
+                    .to_string()
             })
             .collect::<Vec<_>>()
             .join(", ");
@@ -302,7 +280,7 @@ impl Opcode {
         let fields = self
             .fields
             .iter()
-            .map(|f| f.alias.as_ref().unwrap_or(&f.field));
+            .map(|f| syn::Ident::new(operand_accessor_name(&f.to_string()), Span::call_site()));
         quote! {
             impl std::fmt::Debug for #name {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -320,7 +298,7 @@ impl Opcode {
         let fields = self
             .fields
             .iter()
-            .map(|f| f.alias.as_ref().unwrap_or(&f.field));
+            .map(|f| syn::Ident::new(operand_accessor_name(&f.to_string()), Span::call_site()));
         let inst = self.name_to_inst();
         quote! {
             impl std::fmt::Display for #name {

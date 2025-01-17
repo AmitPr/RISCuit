@@ -1,5 +1,0 @@
-[build]
-target = "../riscv32imac-unknown-linux-gnu.json"
-
-[target.riscv32imac-unknown-linux-gnu]
-linker = "/opt/riscv/bin/riscv32-unknown-linux-gnu-gcc"

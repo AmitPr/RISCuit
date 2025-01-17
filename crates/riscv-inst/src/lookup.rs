@@ -3,42 +3,42 @@ use riscv_inst_macros::{bits, instructions};
 #[instructions]
 pub enum Opcode {
     // Load instructions
-    #[fields(rd, rs1, oimm12 as imm)]
+    #[fields(rd, rs1, oimm12)]
     #[isa(base = "RV32I")]
     Lb,
-    #[fields(rd, rs1, oimm12 as imm)]
+    #[fields(rd, rs1, oimm12)]
     #[isa(base = "RV32I")]
     Lh,
-    #[fields(rd, rs1, oimm12 as imm)]
+    #[fields(rd, rs1, oimm12)]
     #[isa(base = "RV32I")]
     Lw,
-    #[fields(rd, rs1, oimm12 as imm)]
+    #[fields(rd, rs1, oimm12)]
     #[isa(base = "RV64I")]
     Ld,
-    #[fields(rd, rs1, oimm12 as imm)]
+    #[fields(rd, rs1, oimm12)]
     #[isa(base = "RV128I")]
     Lq,
-    #[fields(rd, rs1, oimm12 as imm)]
+    #[fields(rd, rs1, oimm12)]
     #[isa(base = "RV32I")]
     Lbu,
-    #[fields(rd, rs1, oimm12 as imm)]
+    #[fields(rd, rs1, oimm12)]
     #[isa(base = "RV32I")]
     Lhu,
-    #[fields(rd, rs1, oimm12 as imm)]
+    #[fields(rd, rs1, oimm12)]
     #[isa(base = "RV64I")]
     Lwu,
-    #[fields(rd, rs1, oimm12 as imm)]
+    #[fields(rd, rs1, oimm12)]
     #[isa(base = "RV128I")]
     Ldu,
 
     // Floating point loads
-    #[fields(frd, rs1, oimm12 as imm)]
+    #[fields(frd, rs1, oimm12)]
     #[isa(base = "RV32I", ext = "F")]
     Flw,
-    #[fields(frd, rs1, oimm12 as imm)]
+    #[fields(frd, rs1, oimm12)]
     #[isa(base = "RV32I", ext = "D")]
     Fld,
-    #[fields(frd, rs1, oimm12 as imm)]
+    #[fields(frd, rs1, oimm12)]
     #[isa(base = "RV32I", ext = "Q")]
     Flq,
 
@@ -51,77 +51,77 @@ pub enum Opcode {
     FenceI,
 
     // Immediate arithmetic
-    #[fields(rd, rs1, imm12 as imm)]
+    #[fields(rd, rs1, imm12)]
     #[isa(base = "RV32I")]
     Addi,
-    #[fields(rd, rs1, imm12 as imm)]
+    #[fields(rd, rs1, imm12)]
     #[isa(base = "RV32I")]
     Slti,
-    #[fields(rd, rs1, imm12 as imm)]
+    #[fields(rd, rs1, imm12)]
     #[isa(base = "RV32I")]
     Sltiu,
-    #[fields(rd, rs1, imm12 as imm)]
+    #[fields(rd, rs1, imm12)]
     #[isa(base = "RV32I")]
     Xori,
-    #[fields(rd, rs1, imm12 as imm)]
+    #[fields(rd, rs1, imm12)]
     #[isa(base = "RV32I")]
     Ori,
-    #[fields(rd, rs1, imm12 as imm)]
+    #[fields(rd, rs1, imm12)]
     #[isa(base = "RV32I")]
     Andi,
-    #[fields(rd, rs1, shamt5 as shamt)]
+    #[fields(rd, rs1, shamt5)]
     #[isa(base = "RV32I")]
     Slli,
-    #[fields(rd, rs1, shamt5 as shamt)]
+    #[fields(rd, rs1, shamt5)]
     #[isa(base = "RV32I")]
     Srli,
-    #[fields(rd, rs1, shamt5 as shamt)]
+    #[fields(rd, rs1, shamt5)]
     #[isa(base = "RV32I")]
     Srai,
 
-    #[fields(rd, oimm20 as imm)]
+    #[fields(rd, oimm20)]
     #[isa(base = "RV32I")]
     Auipc,
 
     // RV64I immediate arithmetic
-    #[fields(rd, rs1, imm12 as imm)]
+    #[fields(rd, rs1, imm12)]
     #[isa(base = "RV64I")]
     Addiw,
-    #[fields(rd, rs1, shamt5 as shamt)]
+    #[fields(rd, rs1, shamt5)]
     #[isa(base = "RV64I")]
     Slliw,
-    #[fields(rd, rs1, shamt5 as shamt)]
+    #[fields(rd, rs1, shamt5)]
     #[isa(base = "RV64I")]
     Srliw,
-    #[fields(rd, rs1, shamt5 as shamt)]
+    #[fields(rd, rs1, shamt5)]
     #[isa(base = "RV64I")]
     Sraiw,
 
     // Store instructions
-    #[fields(rs1, rs2, simm12 as imm)]
+    #[fields(rs1, rs2, simm12)]
     #[isa(base = "RV32I")]
     Sb,
-    #[fields(rs1, rs2, simm12 as imm)]
+    #[fields(rs1, rs2, simm12)]
     #[isa(base = "RV32I")]
     Sh,
-    #[fields(rs1, rs2, simm12 as imm)]
+    #[fields(rs1, rs2, simm12)]
     #[isa(base = "RV32I")]
     Sw,
-    #[fields(rs1, rs2, simm12 as imm)]
+    #[fields(rs1, rs2, simm12)]
     #[isa(base = "RV64I")]
     Sd,
-    #[fields(rs1, rs2, simm12 as imm)]
+    #[fields(rs1, rs2, simm12)]
     #[isa(base = "RV128I")]
     Sq,
 
     // Floating point stores
-    #[fields(rs1, frs2, simm12 as imm)]
+    #[fields(rs1, frs2, simm12)]
     #[isa(base = "RV32I", ext = "F")]
     Fsw,
-    #[fields(rs1, frs2, simm12 as imm)]
+    #[fields(rs1, frs2, simm12)]
     #[isa(base = "RV32I", ext = "D")]
     Fsd,
-    #[fields(rs1, frs2, simm12 as imm)]
+    #[fields(rs1, frs2, simm12)]
     #[isa(base = "RV32I", ext = "Q")]
     Fsq,
 
@@ -288,7 +288,7 @@ pub enum Opcode {
     #[isa(base = "RV32I", ext = "M")]
     Remu,
 
-    #[fields(rd, imm20 as imm)]
+    #[fields(rd, imm20)]
     #[isa(base = "RV32I")]
     Lui,
 
@@ -611,52 +611,52 @@ pub enum Opcode {
     FmvQX,
 
     // RV128I immediate arithmetic
-    #[fields(rd, rs1, imm12 as imm)]
+    #[fields(rd, rs1, imm12)]
     #[isa(base = "RV128I")]
     Addid,
-    #[fields(rd, rs1, shamt6 as shamt)]
+    #[fields(rd, rs1, shamt6)]
     #[isa(base = "RV128I")]
     Sllid,
-    #[fields(rd, rs1, shamt6 as shamt)]
+    #[fields(rd, rs1, shamt6)]
     #[isa(base = "RV128I")]
     Srlid,
-    #[fields(rd, rs1, shamt6 as shamt)]
+    #[fields(rd, rs1, shamt6)]
     #[isa(base = "RV128I")]
     Sraid,
 
     // Branch instructions
-    #[fields(rs1, rs2, sbimm12 as imm)]
+    #[fields(rs1, rs2, sbimm12)]
     #[isa(base = "RV32I")]
     Beq,
-    #[fields(rs1, rs2, sbimm12 as imm)]
+    #[fields(rs1, rs2, sbimm12)]
     #[isa(base = "RV32I")]
     Bne,
-    #[fields(rs1, rs2, sbimm12 as imm)]
+    #[fields(rs1, rs2, sbimm12)]
     #[isa(base = "RV32I")]
     Blt,
-    #[fields(rs1, rs2, sbimm12 as imm)]
+    #[fields(rs1, rs2, sbimm12)]
     #[isa(base = "RV32I")]
     Bge,
-    #[fields(rs1, rs2, sbimm12 as imm)]
+    #[fields(rs1, rs2, sbimm12)]
     #[isa(base = "RV32I")]
     Bltu,
-    #[fields(rs1, rs2, sbimm12 as imm)]
+    #[fields(rs1, rs2, sbimm12)]
     #[isa(base = "RV32I")]
     Bgeu,
 
     // Jump instructions
-    #[fields(rd, rs1, oimm12 as imm)]
+    #[fields(rd, rs1, oimm12)]
     #[isa(base = "RV32I")]
     Jalr,
-    #[fields(rd, jimm20 as imm)]
+    #[fields(rd, jimm20)]
     #[isa(base = "RV32I")]
     Jal,
 
     // System instructions
-    #[fields(rs1, imm12 as imm)]
+    #[fields(rs1, imm12)]
     #[isa(base = "RV32I")]
     Ecall,
-    #[fields(rs1, imm12 as imm)]
+    #[fields(rs1, imm12)]
     #[isa(base = "RV32I")]
     Ebreak,
 
@@ -1155,20 +1155,91 @@ pub fn decode_q4(inst: u32) -> Option<Opcode> {
     }
 }
 
+pub fn decode_q0(inst: u16) -> Option<Opcode> {
+    match bits!(inst[15:13]) {
+        0 => Some(CAddi4spn(inst).into()),
+        1 => Some(CFld(inst).into()),
+        2 => Some(CLw(inst).into()),
+        3 => Some(CFlw(inst).into()), // TODO: RV64
+        5 => Some(CFsd(inst).into()),
+        6 => Some(CSw(inst).into()),
+        7 => Some(CFsw(inst).into()), // TODO: RV64
+        _ => None,
+    }
+}
+
+pub fn decode_q1(inst: u16) -> Option<Opcode> {
+    match bits!(inst[15:13]) {
+        0 => match bits!(inst[12:2]) {
+            0 => Some(CNop(inst).into()),
+            _ => Some(CAddi(inst).into()),
+        },
+        1 => Some(CJal(inst).into()), // TODO: RV64
+        2 => Some(CLi(inst).into()),
+        3 => match bits!(inst[11:7]) {
+            2 => Some(CAddi16sp(inst).into()),
+            _ => Some(CLui(inst).into()),
+        },
+        4 => match bits!(inst[11:10]) {
+            0 => Some(CSrli(inst).into()),
+            1 => Some(CSrai(inst).into()),
+            2 => Some(CAndi(inst).into()),
+            3 => match bits!(inst[12|6:5]) {
+                0 => Some(CSub(inst).into()),
+                1 => Some(CXor(inst).into()),
+                2 => Some(COr(inst).into()),
+                3 => Some(CAnd(inst).into()),
+                4 => Some(CSubw(inst).into()),
+                5 => Some(CAddw(inst).into()),
+                6..=7 => None,
+                _ => unreachable!(),
+            },
+            _ => unreachable!(),
+        },
+        5 => Some(CJ(inst).into()),
+        6 => Some(CBeqz(inst).into()),
+        7 => Some(CBnez(inst).into()),
+        _ => unreachable!(),
+    }
+}
+
+pub fn decode_q2(inst: u16) -> Option<Opcode> {
+    match bits!(inst[15:13]) {
+        0 => match bits!(inst[12]) {
+            0 => Some(CSlli(inst).into()),
+            _ => None,
+        },
+        1 => Some(CFldsp(inst).into()),
+        2 => Some(CLwsp(inst).into()),
+        3 => Some(CFlwsp(inst).into()), // TODO: RV64
+        4 => match bits!(inst[12]) {
+            0 => match bits!(inst[6:2]) {
+                0 => Some(CJr(inst).into()),
+                _ => Some(CMv(inst).into()),
+            },
+            _ => match bits!(inst[6:2]) {
+                0 => match bits!(inst[11:7]) {
+                    0 => Some(CEbreak(inst).into()),
+                    _ => Some(CJalr(inst).into()),
+                },
+                _ => Some(CAdd(inst).into()),
+            },
+        },
+        5 => Some(CFsdsp(inst).into()),
+        6 => Some(CSwsp(inst).into()),
+        7 => Some(CFswsp(inst).into()), // TODO: RV64
+        _ => None,
+    }
+}
+
 pub fn decode(inst: u32) -> (Option<Opcode>, u32) {
+    if inst == 0 {
+        return (None, 4);
+    }
     match bits!(inst[1:0]) {
-        0 => (
-            decode_q4(crate::rv_c::RISCV_C2G_C0[(inst as u16 >> 2) as usize]),
-            2,
-        ),
-        1 => (
-            decode_q4(crate::rv_c::RISCV_C2G_C1[(inst as u16 >> 2) as usize]),
-            2,
-        ),
-        2 => (
-            decode_q4(crate::rv_c::RISCV_C2G_C2[(inst as u16 >> 2) as usize]),
-            2,
-        ),
+        0 => (decode_q0(inst as u16), 2),
+        1 => (decode_q1(inst as u16), 2),
+        2 => (decode_q2(inst as u16), 2),
         3 => (decode_q4(inst), 4),
         _ => unreachable!(),
     }

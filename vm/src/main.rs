@@ -1,8 +1,9 @@
 mod cpu;
 mod elf;
 mod memory;
+mod syscall;
 
-use cpu::Cpu32;
+use cpu::Hart32;
 use elf::load_elf;
 
 fn main() {
@@ -13,10 +14,11 @@ fn main() {
     }
     let elf_path = &args[1];
 
-    let mut cpu = Cpu32::new();
-    let entry = load_elf(&mut cpu, elf_path);
-    cpu.pc = entry;
+    let mut cpu = Hart32::new();
+    let elf = std::fs::read(elf_path).expect("Failed to read ELF file");
+    let elf = load_elf(&mut cpu, &elf);
+    cpu.pc = elf.entry as u32;
 
-    println!("Starting at 0x{:08x}", entry);
-    cpu.run();
+    println!("Starting at 0x{:08x}", cpu.pc);
+    cpu.run(elf);
 }

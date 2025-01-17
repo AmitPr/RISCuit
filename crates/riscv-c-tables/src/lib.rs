@@ -547,4 +547,13 @@ mod tests {
         // Test that invalid instructions decompress to 0
         assert_eq!(tables[0][0], 0);
     }
+
+    #[test]
+    fn test_cli() {
+        let tables = generate_tables();
+        let inst: u16 = 0x200d; // c.li
+        let idx = inst >> 2;
+        let decompressed = tables[1][idx as usize];
+        println!("Decompressed: {:08X}", decompressed);
+    }
 }
