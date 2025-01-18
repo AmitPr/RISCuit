@@ -22,14 +22,19 @@ pub fn load_elf<'a>(cpu: &mut Hart32, bytes: &'a [u8]) -> goblin::elf::Elf<'a> {
                 let file_start = ph.p_offset as usize;
                 let vaddr = base_addr + ph.p_vaddr as u32;
 
-                // Load segment data
-                for i in 0..(ph.p_filesz as usize) {
-                    let byte = data[file_start + i];
-                    cpu.mem.store::<u8>(vaddr + i as u32, byte);
-                }
-                // Zero remainder
-                for i in (ph.p_filesz as usize)..(ph.p_memsz as usize) {
-                    cpu.mem.store::<u8>(vaddr + i as u32, 0);
+                unsafe {
+                    // Load segment data
+                    std::ptr::copy(
+                        data.as_ptr().add(file_start),
+                        cpu.mem.pointer(vaddr),
+                        ph.p_filesz as usize,
+                    );
+                    // Zero remainder
+                    std::ptr::write_bytes(
+                        cpu.mem.pointer(vaddr).add(ph.p_filesz as usize),
+                        0,
+                        ph.p_memsz as usize - ph.p_filesz as usize,
+                    );
                 }
             }
         }
@@ -50,7 +55,7 @@ pub fn load_elf<'a>(cpu: &mut Hart32, bytes: &'a [u8]) -> goblin::elf::Elf<'a> {
                 let lib_elf = goblin::elf::Elf::parse(&lib_data).expect("Failed to parse library");
 
                 // Choose a base address for this library (simplified)
-                let lib_base = 0x40000000 + (loaded_libs.len() as u32 * 0x1000000);
+                let lib_base = 0x400000 + (loaded_libs.len() as u32 * 0x1000000);
                 loaded_libs.insert(lib_name.to_string(), lib_base);
 
                 // Load library segments

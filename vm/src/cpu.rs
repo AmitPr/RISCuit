@@ -1,6 +1,3 @@
-use std::io::Write;
-
-use rand::RngCore;
 use riscv_inst::lookup::Opcode::*;
 
 use crate::memory::Memory;
@@ -24,7 +21,7 @@ impl Hart32 {
     }
 
     /// Read a register. x0 is always 0 in RISC-V.
-    const fn get_reg(&self, r: u32) -> u32 {
+    pub const fn get_reg(&self, r: u32) -> u32 {
         if r == 0 {
             0
         } else {
@@ -33,7 +30,7 @@ impl Hart32 {
     }
 
     /// Write a register (except x0).
-    fn set_reg(&mut self, r: u32, val: u32) {
+    pub fn set_reg(&mut self, r: u32, val: u32) {
         if r != 0 {
             self.regs[r as usize] = val;
         }
@@ -55,12 +52,29 @@ impl Hart32 {
                 }
             })
             .collect();
+        let mut debug = false;
         while self.running {
             if let Some(sym) = syms_by_pc.get(&self.pc) {
                 println!("0x{:08x}: {}", self.pc, sym);
-            }
-            if self.pc == 0x000231c4 {
-                self.running = false;
+                // wait for stdin
+                let mut input = String::new();
+                // std::io::stdin().read_line(&mut input).unwrap();
+                match input.trim() {
+                    "q" => {
+                        self.running = false;
+                        break;
+                    }
+                    "d" => {
+                        debug = !debug;
+                        if debug {
+                            println!("Register states:");
+                            for (i, reg) in self.regs.iter().enumerate() {
+                                println!("x{:02}: 0x{:08x}", i, reg);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
             }
             let inst = self.mem.load::<u32>(self.pc);
             let (op, inc) = riscv_inst::lookup::decode(inst);
@@ -69,7 +83,9 @@ impl Hart32 {
             });
 
             let mut next_pc = self.pc.wrapping_add(inc);
-            // println!("0x{:08x}:\t{inst:08x}\t{op}", self.pc,);
+            if debug {
+                println!("0x{:08x}:\t{inst:08x}\t{op}", self.pc,);
+            }
 
             macro_rules! reg_imm_op {
                 (|$inst:ident.$rs1:ident, $inst2:ident.$imm:ident| $body:expr) => {{
@@ -555,7 +571,10 @@ impl Hart32 {
                     let rs2 = self.get_reg(cmv.crs2());
                     self.set_reg(cmv.crd(), rs2);
                 }
-                CEbreak(cebreak) => todo!(),
+                CEbreak(cebreak) => {
+                    // ebreak
+                    self.running = false;
+                }
                 CJalr(cjalr) => {
                     // jalr x1, 0(rs1)
                     let rs1 = self.get_reg(cjalr.crs1());
@@ -604,7 +623,6 @@ impl Hart32 {
                 CSq(csq) => todo!(),
                 CLqsp(clqsp) => todo!(),
                 CSqsp(csqsp) => todo!(),
-                // _ => panic!("Unsupported instruction: {:?}", op),
             }
 
             self.pc = next_pc;
@@ -638,7 +656,7 @@ impl Hart32 {
                     let $arg = self.get_reg($counter);
                     syscall!(@arg, $ty, $arg);
                 };
-                (@fetch_regs, $counter: expr) => {};
+                (@fetch_regs, $counter: expr,) => {};
                 (@arg, ptr, $arg:ident) => {
                     let $arg = self.mem.pointer($arg);
                 };
@@ -646,44 +664,51 @@ impl Hart32 {
             }
 
             match call {
-                // getrandom(void* buf, size_t buflen, uint flags)
-                278 => syscall!(getrandom(ptr buf, val buflen, val flags)),
+                // write(int fd, const void* buf, size_t count)
+                64 => syscall!(write(val fd, ptr buf, val count)),
+                // writev(int fd, const struct iovec* iov, int iovcnt)
+                66 => syscall!(writev(val fd, ptr iov, val iovcnt)),
+                // readlinkat(int dirfd, const char* pathname, char* buf, size_t bufsiz)
+                78 => syscall!(readlinkat(val dirfd, ptr pathname, ptr buf, val bufsiz)),
+                // exit_group(int status)
+                94 => syscall!(exit_group(val status)),
+                // set_tid_address(int* tidptr)
+                96 => syscall!(set_tid_address(ptr tidptr)),
+                // set_robust_list(struct robust_list_head* head, size_t len)
+                99 => syscall!(set_robust_list(ptr head, val len)),
+                // tgkill(int tgid, int tid, int sig)
+                131 => syscall!(tgkill(val tgid, val tid, val sig)),
+                // rt_sigprocmask(int how, const sigset_t* set, sigset_t* oldset, size_t sigsetsize)
+                135 => syscall!(rt_sigprocmask(val how, ptr set, ptr oldset, val sigsetsize)),
+                // getpid()
+                172 => syscall!(getpid()),
+                // gettid()
+                178 => syscall!(gettid()),
+                // brk(void* addr)
+                214 => syscall!(brk(ptr addr)),
+                // mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
+                222 => {
+                    syscall!(mmap(val addr, val length, val prot, val flags, val fd, val offset))
+                }
+                // mprotect(void* addr, size_t len, int prot)
+                226 => syscall!(mprotect(ptr addr, val len, val prot)),
                 // riscv_hwprobe(struct riscv_hwprobe* pairs, size_t pair_count,
                 //               size_t cpusetsize, cpu_set_t *cpus,
                 //               unsigned int flags)
                 258 => {
                     syscall!(riscv_hwprobe(ptr pairs, val pair_count, val cpusetsize, ptr cpus, val flags))
                 }
-                // brk(void* addr)
-                214 => syscall!(brk(ptr addr)),
-                // set_tid_address(int* tidptr)
-                96 => syscall!(set_tid_address(ptr tidptr)),
-                // set_robust_list(struct robust_list_head* head, size_t len)
-                99 => syscall!(set_robust_list(ptr head, val len)),
                 // getrlimit(int resource, struct rlimit* rlim)
                 261 => syscall!(getrlimit(val resource, ptr rlim)),
-                // readlinkat(int dirfd, const char* pathname, char* buf, size_t bufsiz)
-                78 => syscall!(readlinkat(val dirfd, ptr pathname, ptr buf, val bufsiz)),
-                // write(int fd, const void* buf, size_t count)
-                64 => syscall!(write(val fd, ptr buf, val count)),
-                // writev(int fd, const struct iovec* iov, int iovcnt)
-                66 => syscall!(writev(val fd, ptr iov, val iovcnt)),
-                // exit_group(int status)
-                94 => syscall!(exit_group(val status)),
-                // mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
-                222 => {
-                    syscall!(mmap(val addr, val length, val prot, val flags, val fd, val offset))
+                // getrandom(void* buf, size_t buflen, uint flags)
+                278 => syscall!(getrandom(ptr buf, val buflen, val flags)),
+                // statx
+                291 => {
+                    syscall!(statx(val dirfd, ptr pathname, val flags, val mask, ptr statxbuf))
                 }
                 // futex(int* uaddr, int futex_op, int val, size_t timeout, int* uaddr2, int val3)
                 422 => {
                     syscall!(futex(ptr uaddr, val futex_op, val val, val timeout, ptr uaddr2, val val3))
-                }
-
-                // mprotect(void* addr, size_t len, int prot)
-                226 => syscall!(mprotect(ptr addr, val len, val prot)),
-                // statx
-                291 => {
-                    syscall!(statx(val dirfd, ptr pathname, val flags, val mask, ptr statxbuf))
                 }
 
                 _ => {

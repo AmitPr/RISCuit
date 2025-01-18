@@ -32,9 +32,19 @@ pub fn brk(hart: &mut Hart32, addr: *mut u8) -> u32 {
     hart.mem.brk
 }
 
-pub fn set_tid_address(_hart: &mut Hart32, _tidptr: *mut u32) -> u32 {
+pub fn gettid(_hart: &mut Hart32) -> u32 {
     // We don't implement this syscall.
     0x123
+}
+
+pub fn set_tid_address(hart: &mut Hart32, _tidptr: *mut u32) -> u32 {
+    // We don't implement this syscall.
+    gettid(hart)
+}
+
+pub fn getpid(_hart: &mut Hart32) -> u32 {
+    // We don't implement this syscall.
+    1
 }
 
 pub fn set_robust_list(_hart: &mut Hart32, _head: *mut u8, _len: u32) -> u32 {
@@ -217,6 +227,27 @@ pub fn statx(
     _mask: u32,
     _statxbuf: *mut u8,
 ) -> i32 {
+    // stubbed out
+    0
+}
+
+pub fn rt_sigprocmask(
+    _hart: &mut Hart32,
+    _how: i32,
+    _set: *const u8,
+    oldset: *mut u8,
+    sigsetsize: u32,
+) -> i32 {
+    if !oldset.is_null() {
+        unsafe {
+            std::ptr::write_bytes(oldset, 0, sigsetsize as usize);
+        }
+    }
+
+    0
+}
+
+pub fn tgkill(_hart: &mut Hart32, _tgid: i32, _tid: i32, _sig: i32) -> i32 {
     // stubbed out
     0
 }
