@@ -56,4 +56,4 @@ ENTRYPOINT cargo +nightly build --release \
     -Z build-std=core,alloc,std,panic_abort \
     -Z build-std-features=optimize_for_size \
     --target /opt/rust/riscv32imac-unknown-linux-gnu.json \
-    --config target.riscv32imac-unknown-linux-gnu.linker=\"riscv32-unknown-linux-gnu-gcc\"
+    --config target.riscv32imac-unknown-linux-gnu.linker=\"riscv32-unknown-linux-gnu-gcc\" \

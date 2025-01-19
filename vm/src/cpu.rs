@@ -58,7 +58,7 @@ impl Hart32 {
                 println!("0x{:08x}: {}", self.pc, sym);
                 // wait for stdin
                 let mut input = String::new();
-                // std::io::stdin().read_line(&mut input).unwrap();
+                //std::io::stdin().read_line(&mut input).unwrap();
                 match input.trim() {
                     "q" => {
                         self.running = false;

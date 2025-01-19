@@ -3,104 +3,130 @@ use std::collections::HashMap;
 use goblin::elf::{
     dynamic::DT_NEEDED,
     program_header::{PT_DYNAMIC, PT_LOAD},
+    reloc::{R_RISCV_32, R_RISCV_JUMP_SLOT, R_RISCV_RELATIVE},
 };
 
 use crate::cpu::Hart32;
 
 pub fn load_elf<'a>(cpu: &mut Hart32, bytes: &'a [u8]) -> goblin::elf::Elf<'a> {
-    let file = goblin::elf::Elf::parse(bytes).expect("Failed to parse ELF");
+    let elf = goblin::elf::Elf::parse(bytes).expect("Failed to parse ELF");
+    let mut symbols = HashMap::new();
+    let mut loaded_libs = HashMap::new();
 
-    // Track base addresses of loaded libraries
-    let mut loaded_libs: HashMap<String, u32> = HashMap::new();
-    // Track resolved symbols
-    let mut symbol_map: HashMap<String, u32> = HashMap::new();
+    // Helper to load a single library and its dependencies
+    fn load_library(
+        cpu: &mut Hart32,
+        lib_name: &str,
+        base_addr: u32,
+        symbols: &mut HashMap<String, u32>,
+        loaded_libs: &mut HashMap<String, u32>,
+    ) -> u32 {
+        if let Some(&addr) = loaded_libs.get(lib_name) {
+            return addr;
+        }
 
-    // Helper function to load an ELF at a specific base address
-    fn load_segments(cpu: &mut Hart32, elf: &goblin::elf::Elf, data: &[u8], base_addr: u32) {
-        for ph in &elf.program_headers {
-            if ph.p_type == PT_LOAD {
-                let file_start = ph.p_offset as usize;
-                let vaddr = base_addr + ph.p_vaddr as u32;
+        let lib_data = std::fs::read(lib_name).expect("Failed to read library");
+        let lib_elf = goblin::elf::Elf::parse(&lib_data).expect("Failed to parse library");
 
-                unsafe {
-                    // Load segment data
-                    std::ptr::copy(
-                        data.as_ptr().add(file_start),
-                        cpu.mem.pointer(vaddr),
-                        ph.p_filesz as usize,
-                    );
-                    // Zero remainder
-                    std::ptr::write_bytes(
-                        cpu.mem.pointer(vaddr).add(ph.p_filesz as usize),
-                        0,
-                        ph.p_memsz as usize - ph.p_filesz as usize,
-                    );
+        // Record this library's base address
+        loaded_libs.insert(lib_name.to_string(), base_addr);
+
+        // Load its dependencies first
+        let mut next_base = base_addr + 0x1000000;
+        if let Some(dynamic) = &lib_elf.dynamic {
+            for dyn_entry in &dynamic.dyns {
+                if dyn_entry.d_tag == DT_NEEDED {
+                    let dep_name = lib_elf.dynstrtab[dyn_entry.d_val as usize].to_string();
+                    next_base = load_library(cpu, &dep_name, next_base, symbols, loaded_libs);
                 }
+            }
+        }
+
+        // Load segments
+        println!("Loading library: {} at {:08x}", lib_name, base_addr);
+        for ph in &lib_elf.program_headers {
+            if ph.p_type == PT_LOAD {
+                let vaddr = base_addr + ph.p_vaddr as u32;
+                for i in 0..ph.p_filesz as usize {
+                    cpu.mem
+                        .store::<u8>(vaddr + i as u32, lib_data[ph.p_offset as usize + i]);
+                }
+                // Zero BSS
+                for i in ph.p_filesz as usize..ph.p_memsz as usize {
+                    cpu.mem.store::<u8>(vaddr + i as u32, 0);
+                }
+            }
+        }
+
+        // Add symbols
+        for sym in lib_elf.dynsyms.iter() {
+            if let Some(name) = lib_elf.dynstrtab.get_at(sym.st_name) {
+                symbols.insert(name.to_string(), base_addr + sym.st_value as u32);
+            }
+        }
+
+        // Process relocations
+        for rela in &lib_elf.dynrelas {
+            let sym = &lib_elf
+                .dynsyms
+                .get(rela.r_sym)
+                .expect("Invalid symbol index");
+            if let Some(name) = lib_elf.dynstrtab.get_at(sym.st_name) {
+                let target = symbols.get(name).copied().unwrap_or(0);
+                let addr = base_addr + rela.r_offset as u32;
+
+                match rela.r_type {
+                    R_RISCV_RELATIVE | R_RISCV_32 | R_RISCV_JUMP_SLOT => {
+                        cpu.mem.store::<u32>(addr, target);
+                    }
+                    _ => println!("Unhandled relocation: {} at {:#x}", rela.r_type, addr),
+                }
+            }
+        }
+
+        next_base
+    }
+
+    // Load main program segments
+    for ph in &elf.program_headers {
+        if ph.p_type == PT_LOAD {
+            let vaddr = ph.p_vaddr as u32;
+            for i in 0..ph.p_filesz as usize {
+                cpu.mem
+                    .store::<u8>(vaddr + i as u32, bytes[ph.p_offset as usize + i]);
+            }
+            for i in ph.p_filesz as usize..ph.p_memsz as usize {
+                cpu.mem.store::<u8>(vaddr + i as u32, 0);
             }
         }
     }
 
-    // Load main program at its preferred address
-    load_segments(cpu, &file, bytes, 0);
-
-    // Process dynamic section to load libraries
-    if let Some(dynamic) = &file.dynamic {
+    // Load all libraries starting at 0x40000000
+    if let Some(dynamic) = &elf.dynamic {
+        let mut next_base = 0x40000000;
         for dyn_entry in &dynamic.dyns {
             if dyn_entry.d_tag == DT_NEEDED {
-                let lib_name = &file.dynstrtab[dyn_entry.d_val as usize];
-                println!("Loading library: {}", lib_name);
-
-                // Load library file (you'll want better path resolution)
-                let lib_data = std::fs::read(lib_name).expect("Failed to read library");
-                let lib_elf = goblin::elf::Elf::parse(&lib_data).expect("Failed to parse library");
-
-                // Choose a base address for this library (simplified)
-                let lib_base = 0x400000 + (loaded_libs.len() as u32 * 0x1000000);
-                loaded_libs.insert(lib_name.to_string(), lib_base);
-
-                // Load library segments
-                load_segments(cpu, &lib_elf, &lib_data, lib_base);
-
-                // Add library symbols to symbol map
-                for sym in lib_elf.dynsyms.iter() {
-                    if sym.st_value != 0 {
-                        if let Some(name) = lib_elf.dynstrtab.get_at(sym.st_name) {
-                            let sym_addr = lib_base + sym.st_value as u32;
-                            symbol_map.insert(name.to_string(), sym_addr);
-                        }
-                    }
-                }
+                let lib_name = elf.dynstrtab[dyn_entry.d_val as usize].to_string();
+                next_base = load_library(cpu, &lib_name, next_base, &mut symbols, &mut loaded_libs);
             }
         }
     }
 
     // Process relocations
-    for rela in &file.dynrelas {
-        // Get symbol this relocation refers to
-        let sym = &file.dynsyms.get(rela.r_sym).expect("Failed to get symbol");
-        if let Some(sym_name) = file.dynstrtab.get_at(sym.st_name) {
-            if let Some(&target_addr) = symbol_map.get(sym_name) {
-                let reloc_addr = rela.r_offset as u32;
+    for rela in &elf.dynrelas {
+        let sym = &elf.dynsyms.get(rela.r_sym).expect("Invalid symbol index");
+        if let Some(name) = elf.dynstrtab.get_at(sym.st_name) {
+            let target = symbols.get(name).copied().unwrap_or(0);
+            let addr = rela.r_offset as u32;
 
-                match rela.r_type {
-                    goblin::elf::reloc::R_RISCV_RELATIVE => {
-                        // Handle relative relocation
-                        let value = cpu.mem.load::<u32>(reloc_addr);
-                        cpu.mem.store::<u32>(reloc_addr, value + target_addr);
-                    }
-                    goblin::elf::reloc::R_RISCV_JUMP_SLOT => {
-                        // Handle PLT/GOT entry
-                        cpu.mem.store::<u32>(reloc_addr, target_addr);
-                    }
-                    goblin::elf::reloc::R_RISCV_32 => {
-                        // Handle 32-bit absolute relocation
-                        cpu.mem.store::<u32>(reloc_addr, target_addr);
-                    }
-                    _ => println!("Unhandled relocation type: {}", rela.r_type),
+            match rela.r_type {
+                R_RISCV_RELATIVE | R_RISCV_32 | R_RISCV_JUMP_SLOT => {
+                    cpu.mem.store::<u32>(addr, target);
                 }
+                _ => println!("Unhandled relocation: {} at {:#x}", rela.r_type, addr),
             }
         }
     }
 
-    file
+    elf
 }

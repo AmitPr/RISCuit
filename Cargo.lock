@@ -74,6 +74,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prettyplease"
+version = "0.2.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6924ced06e1f7dfe3fa48d57b9f74f55d8915f5036121bef647ef4b204895fac"
+dependencies = [
+ "proc-macro2",
+ "syn",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.92"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -134,6 +144,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "riscv-inst-codegen"
+version = "0.1.0"
+dependencies = [
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "riscv-inst-macros"
 version = "0.1.0"
 dependencies = [
@@ -164,9 +184,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.93"
+version = "2.0.96"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c786062daee0d6db1132800e623df74274a0a87322d8e183338e01b3d98d058"
+checksum = "d5d0adab1ae378d7f53bdebc67a39f1f151407ef230f0ce2883572f5d8985c80"
 dependencies = [
  "proc-macro2",
  "quote",

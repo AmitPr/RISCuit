@@ -19,7 +19,7 @@
     ]
   },
   "linker-flavor": "gnu-cc",
-  "dynamic-linking": true,
+  "dynamic-linking": false,
   "llvm-target": "riscv32-unknown-linux-gnu",
   "llvm-abiname": "ilp32",
   "panic-strategy": "abort",
