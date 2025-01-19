@@ -1,8 +1,10 @@
 mod bitspec;
 mod r#match;
+mod opcode;
 
 use std::{collections::HashMap, io::Write, path::Path};
 
+use opcode::Opcode;
 use proc_macro2::TokenStream;
 use quote::quote;
 
@@ -29,15 +31,27 @@ fn main() {
         file.write_all(code.as_bytes()).unwrap();
     }
 
+    let base_gen = codegen_base_isas(codegen.iter().map(|(isa, _)| isa.clone()).collect());
+    for (isa, code) in &base_gen {
+        let out_file = out_dir.join(format!("{}.rs", isa));
+        let mut file = std::fs::File::create(&out_file).unwrap();
+        file.write_all(preamble.as_bytes()).unwrap();
+        file.write_all(code.as_bytes()).unwrap();
+    }
+
     let mod_file = out_dir.join("mod.rs");
     let mut mod_file = std::fs::File::create(&mod_file).unwrap();
     let mod_code = {
-        let mods = codegen.iter().map(|(isa, _)| {
-            let mod_name = syn::Ident::new(isa, proc_macro2::Span::call_site());
-            quote! {
-                pub mod #mod_name;
-            }
-        });
+        let mods = codegen
+            .iter()
+            .map(|(isa, _)| isa)
+            .chain(base_gen.iter().map(|(isa, _)| isa))
+            .map(|isa| {
+                let mod_name = syn::Ident::new(isa, proc_macro2::Span::call_site());
+                quote! {
+                    pub mod #mod_name;
+                }
+            });
 
         let gen = syn::parse_quote! {
             pub use crate::{Reg, FReg};
@@ -80,9 +94,10 @@ fn preprocess(spec: &str) -> Vec<Vec<String>> {
 
 fn codegen() -> Vec<(String, String)> {
     let operands = preprocess(RISCV_OPERANDS);
-    let opcodes = preprocess(RISCV_OPCODES);
-
-    r#match::generate_opcode_parser(opcodes.clone());
+    let opcodes = preprocess(RISCV_OPCODES)
+        .into_iter()
+        .map(Opcode::parse)
+        .collect::<Vec<_>>();
 
     let accessors: HashMap<String, TokenStream> = operands
         .iter()
@@ -111,6 +126,58 @@ fn codegen() -> Vec<(String, String)> {
             (isa, prettyplease::unparse(&gen))
         })
         .collect::<Vec<_>>()
+}
+
+fn codegen_base_isas(isas: Vec<String>) -> Vec<(String, String)> {
+    let opcodes = preprocess(RISCV_OPCODES)
+        .into_iter()
+        .map(Opcode::parse)
+        .collect::<Vec<_>>();
+
+    let mut results = Vec::new();
+    for base in ["rv32", "rv64"] {
+        let relevant_isas = isas.iter().filter(|isa| isa.contains(base));
+        let filtered = opcodes
+            .clone()
+            .into_iter()
+            .filter(|opcode| opcode.isas.iter().any(|isa| isa.contains(base)))
+            .collect::<Vec<_>>();
+        let decode_fn = r#match::generate_opcode_parser(filtered, base.to_string());
+
+        let base_ident = isa_ident(base);
+        let variants = relevant_isas.clone().map(|isa| {
+            let isa_ident = isa_ident(isa);
+            quote! {
+                #isa_ident(#isa_ident),
+            }
+        });
+
+        let imports = relevant_isas
+            .clone()
+            .map(|isa| {
+                let isa_mod = syn::Ident::new(isa, proc_macro2::Span::call_site());
+                quote! {
+                    pub use super::#isa_mod::*;
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let gen = syn::parse_quote! {
+            #( #imports )*
+
+            pub enum #base_ident {
+                #(#variants)*
+            }
+
+            impl #base_ident {
+                #decode_fn
+            }
+        };
+
+        results.push((base.to_string(), prettyplease::unparse(&gen)));
+    }
+
+    results
 }
 
 fn generate_operand_accessor_fn(operand: &[String]) -> TokenStream {
@@ -147,84 +214,19 @@ fn generate_operand_accessor_fn(operand: &[String]) -> TokenStream {
     }
 }
 
-fn group_by_isa(opcodes: Vec<Vec<String>>) -> HashMap<String, Vec<Vec<String>>> {
+fn group_by_isa(opcodes: Vec<Opcode>) -> HashMap<String, Vec<Opcode>> {
     let mut isas = HashMap::new();
     for opcode in opcodes {
-        for arg in opcode.iter().rev() {
-            if arg.starts_with("rv") {
-                let isa = isas.entry(arg.clone()).or_insert_with(Vec::new);
-                isa.push(opcode.clone());
-            } else {
-                break;
-            }
+        for isa in &opcode.isas {
+            let isa = isas.entry(isa.clone()).or_insert_with(Vec::new);
+            isa.push(opcode.clone());
         }
     }
 
     isas
 }
 
-fn opcode_ident(opcode: &str) -> syn::Ident {
-    // capitalize first letter of each word
-    let opcode = opcode
-        .split('.')
-        .map(|word| {
-            let mut chars = word.chars();
-            match chars.next() {
-                None => String::new(),
-                Some(c) => c.to_uppercase().chain(chars).collect(),
-            }
-        })
-        .collect::<String>();
-
-    syn::Ident::new(&opcode, proc_macro2::Span::call_site())
-}
-
-fn opcode_operands(mut opcode: Vec<String>) -> Vec<String> {
-    while let Some(arg) = opcode.pop() {
-        if arg.starts_with("rv") {
-            continue;
-        }
-        break;
-    }
-
-    opcode[1..]
-        .iter()
-        .filter(|&arg| arg.chars().next().map_or(false, |c| c.is_alphabetic()))
-        .cloned()
-        .collect()
-}
-
-fn generate_opcode_struct(
-    opcode: Vec<String>,
-    accessors: &HashMap<String, TokenStream>,
-    rv_c: bool,
-) -> TokenStream {
-    let opcode_ident = opcode_ident(&opcode[0]);
-    let operands = opcode_operands(opcode.clone());
-    let operand_accessors = operands
-        .iter()
-        .map(|operand| {
-            accessors.get(operand).unwrap_or_else(|| {
-                panic!("Failed to find accessor for operand '{}'", operand);
-            })
-        })
-        .collect::<Vec<_>>();
-    let operand_inner_ty = if rv_c {
-        quote! { pub u16 }
-    } else {
-        quote! { pub u32 }
-    };
-
-    quote! {
-        pub struct #opcode_ident(#operand_inner_ty);
-
-        impl #opcode_ident {
-            #(#operand_accessors)*
-        }
-    }
-}
-
-fn isa_ident(isa: &str) -> syn::Ident {
+pub(crate) fn isa_ident(isa: &str) -> syn::Ident {
     // capitalize first letter
     let isa = isa
         .chars()
@@ -238,7 +240,7 @@ fn isa_ident(isa: &str) -> syn::Ident {
 
 fn generate_isa_enum(
     isa: String,
-    opcodes: Vec<Vec<String>>,
+    opcodes: Vec<Opcode>,
     accessors: &HashMap<String, TokenStream>,
 ) -> TokenStream {
     let rv_c = isa.contains("c");
@@ -247,16 +249,16 @@ fn generate_isa_enum(
     let variants = opcodes
         .iter()
         .map(|opcode| {
-            let opcode = opcode_ident(&opcode[0]);
+            let ident = opcode.name_ident();
             quote! {
-                #opcode(#opcode),
+                #ident(#ident),
             }
         })
         .collect::<Vec<_>>();
 
     let opcode_structs = opcodes
         .iter()
-        .map(|opcode| generate_opcode_struct(opcode.clone(), accessors, rv_c))
+        .map(|opcode| opcode.codegen_struct(accessors, rv_c))
         .collect::<Vec<_>>();
     quote! {
         pub enum #isa_ident {

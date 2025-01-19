@@ -1,4 +1,4 @@
-use riscv_inst::lookup::Opcode::*;
+use riscv_inst::{codegen::rv32::Rv32, lookup::Opcode::*};
 
 use crate::memory::Memory;
 
@@ -76,7 +76,10 @@ impl Hart32 {
                     _ => {}
                 }
             }
+
             let inst = self.mem.load::<u32>(self.pc);
+            let op = Rv32::parse(inst);
+            println!("0x{:08x}: {:08x} {:?}", self.pc, inst, op);
             let (op, inc) = riscv_inst::lookup::decode(inst);
             let op = op.unwrap_or_else(|| {
                 panic!("Invalid instruction at 0x{:08x}: {:08x}", self.pc, inst)
