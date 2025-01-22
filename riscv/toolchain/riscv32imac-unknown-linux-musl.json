@@ -2,7 +2,7 @@
   "arch": "riscv32",
   "cpu": "generic-rv32",
   "metadata": {
-    "description": "RISC-V Linux (RV32IMAFC ISA)",
+    "description": "RISC-V Linux (RV32IMAC ISA)",
     "host_tools": false,
     "std": true
   },
@@ -10,22 +10,24 @@
   "data-layout": "e-m:e-p:32:32-i64:64-n32-S128",
   "eh-frame-header": false,
   "emit-debug-gdb-scripts": false,
-  "features": "+m,+a",
   "singlethread": true,
+  "features": "+m,+a,+c,+crt-static",
   "pre-link-args": {
     "gnu-cc": [
-      "-march=rv32ima",
+      "-march=rv32imac",
       "-mabi=ilp32",
       "-static"
     ]
   },
   "linker-flavor": "gnu-cc",
   "dynamic-linking": false,
-  "static-linking": true,
-  "llvm-target": "riscv32-unknown-linux-gnu",
+  "crt-static-default": true,
+  "crt-static-respected": true,
+  "llvm-target": "riscv32-unknown-linux-musl",
   "llvm-abiname": "ilp32",
   "panic-strategy": "abort",
   "relocation-model": "static",
+  "plt-by-default": false,
   "os": "linux",
   "env": "musl",
   "target-family": [

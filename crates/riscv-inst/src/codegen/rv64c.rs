@@ -5,9 +5,7 @@
 use super::{FReg, Reg};
 pub enum Rv64c {
     CAddi4spn(CAddi4spn),
-    CFld(CFld),
     CLw(CLw),
-    CFsd(CFsd),
     CSw(CSw),
     CNop(CNop),
     CAddi(CAddi),
@@ -19,19 +17,15 @@ pub enum Rv64c {
     CXor(CXor),
     COr(COr),
     CAnd(CAnd),
-    CSubw(CSubw),
-    CAddw(CAddw),
     CJ(CJ),
     CBeqz(CBeqz),
     CBnez(CBnez),
-    CFldsp(CFldsp),
     CLwsp(CLwsp),
     CJr(CJr),
     CMv(CMv),
     CEbreak(CEbreak),
     CJalr(CJalr),
     CAdd(CAdd),
-    CFsdsp(CFsdsp),
     CSwsp(CSwsp),
     CLd(CLd),
     CSd(CSd),
@@ -39,6 +33,8 @@ pub enum Rv64c {
     CSrli(CSrli),
     CSrai(CSrai),
     CSlli(CSlli),
+    CSubw(CSubw),
+    CAddw(CAddw),
     CLdsp(CLdsp),
     CSdsp(CSdsp),
 }
@@ -48,7 +44,7 @@ impl CAddi4spn {
     pub const fn rd(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 2) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
@@ -59,25 +55,21 @@ impl CAddi4spn {
             | (((self.0 as u32) >> 2) & 0b1000)
     }
 }
-pub struct CFld(pub u16);
-impl CFld {
-    #[inline]
-    pub const fn frd(&self) -> Reg {
-        {
-            let acc = ((self.0 as u32) >> 2) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
-        }
+impl std::fmt::Debug for CAddi4spn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.addi4spn"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(imm), &self.imm())
+            .finish()
     }
-    #[inline]
-    pub const fn rs1(&self) -> Reg {
-        {
-            let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
-        }
-    }
-    #[inline]
-    pub const fn imm(&self) -> u32 {
-        (((self.0 as u32) >> 7) & 0b111000) | (((self.0 as u32) << 1) & 0b11000000)
+}
+impl std::fmt::Display for CAddi4spn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.addi4spn")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
     }
 }
 pub struct CLw(pub u16);
@@ -86,14 +78,14 @@ impl CLw {
     pub const fn rd(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 2) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
     pub const fn rs1(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
@@ -102,25 +94,23 @@ impl CLw {
             | ((((self.0 as u32) >> 4) & 0b100) | (((self.0 as u32) << 1) & 0b1000000))
     }
 }
-pub struct CFsd(pub u16);
-impl CFsd {
-    #[inline]
-    pub const fn rs1(&self) -> Reg {
-        {
-            let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
-        }
+impl std::fmt::Debug for CLw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.lw"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(imm), &self.imm())
+            .finish()
     }
-    #[inline]
-    pub const fn frs2(&self) -> Reg {
-        {
-            let acc = ((self.0 as u32) >> 2) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
-        }
-    }
-    #[inline]
-    pub const fn imm(&self) -> u32 {
-        (((self.0 as u32) >> 7) & 0b111000) | (((self.0 as u32) << 1) & 0b11000000)
+}
+impl std::fmt::Display for CLw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.lw")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
     }
 }
 pub struct CSw(pub u16);
@@ -129,14 +119,14 @@ impl CSw {
     pub const fn rs1(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
     pub const fn rs2(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 2) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
@@ -145,8 +135,40 @@ impl CSw {
             | ((((self.0 as u32) >> 4) & 0b100) | (((self.0 as u32) << 1) & 0b1000000))
     }
 }
+impl std::fmt::Debug for CSw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.sw"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for CSw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.sw")?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
+    }
+}
 pub struct CNop(pub u16);
 impl CNop {}
+impl std::fmt::Debug for CNop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.nop"))
+            .field("inst", &self.0)
+            .finish()
+    }
+}
+impl std::fmt::Display for CNop {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.nop")?;
+        Ok(())
+    }
+}
 pub struct CAddi(pub u16);
 impl CAddi {
     #[inline]
@@ -158,8 +180,25 @@ impl CAddi {
     }
     #[inline]
     pub const fn imm(&self) -> i32 {
-        ((((((self.0 as u32) >> 7) & 0b100000) | (((self.0 as u32) >> 2) & 0b11111)) << 27) as i32)
-            >> 27
+        ((((((self.0 as u32) >> 7) & 0b100000) | (((self.0 as u32) >> 2) & 0b11111)) << 26) as i32)
+            >> 26
+    }
+}
+impl std::fmt::Debug for CAddi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.addi"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1rd), &self.rs1rd())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for CAddi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.addi")?;
+        write!(f, " {:?}", self.rs1rd())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
     }
 }
 pub struct CLi(pub u16);
@@ -173,8 +212,25 @@ impl CLi {
     }
     #[inline]
     pub const fn imm(&self) -> i32 {
-        ((((((self.0 as u32) >> 7) & 0b100000) | (((self.0 as u32) >> 2) & 0b11111)) << 27) as i32)
-            >> 27
+        ((((((self.0 as u32) >> 7) & 0b100000) | (((self.0 as u32) >> 2) & 0b11111)) << 26) as i32)
+            >> 26
+    }
+}
+impl std::fmt::Debug for CLi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.li"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1rd), &self.rs1rd())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for CLi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.li")?;
+        write!(f, " {:?}", self.rs1rd())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
     }
 }
 pub struct CAddi16sp(pub u16);
@@ -193,8 +249,25 @@ impl CAddi16sp {
                 | (((self.0 as u32) << 1) & 0b1000000)
                 | (((self.0 as u32) << 4) & 0b110000000)
                 | (((self.0 as u32) << 3) & 0b100000)))
-            << 23) as i32)
-            >> 23
+            << 22) as i32)
+            >> 22
+    }
+}
+impl std::fmt::Debug for CAddi16sp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.addi16sp"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1rd), &self.rs1rd())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for CAddi16sp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.addi16sp")?;
+        write!(f, " {:?}", self.rs1rd())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
     }
 }
 pub struct CLui(pub u16);
@@ -210,8 +283,25 @@ impl CLui {
     pub const fn imm(&self) -> i32 {
         ((((((self.0 as u32) << 5) & 0b100000000000000000)
             | (((self.0 as u32) << 10) & 0b11111000000000000))
-            << 15) as i32)
-            >> 15
+            << 14) as i32)
+            >> 14
+    }
+}
+impl std::fmt::Debug for CLui {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.lui"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for CLui {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.lui")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
     }
 }
 pub struct CAndi(pub u16);
@@ -220,13 +310,30 @@ impl CAndi {
     pub const fn rs1rd(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
     pub const fn imm(&self) -> i32 {
-        ((((((self.0 as u32) >> 7) & 0b100000) | (((self.0 as u32) >> 2) & 0b11111)) << 27) as i32)
-            >> 27
+        ((((((self.0 as u32) >> 7) & 0b100000) | (((self.0 as u32) >> 2) & 0b11111)) << 26) as i32)
+            >> 26
+    }
+}
+impl std::fmt::Debug for CAndi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.andi"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1rd), &self.rs1rd())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for CAndi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.andi")?;
+        write!(f, " {:?}", self.rs1rd())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
     }
 }
 pub struct CSub(pub u16);
@@ -235,15 +342,32 @@ impl CSub {
     pub const fn rs1rd(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
     pub const fn rs2(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 2) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
+    }
+}
+impl std::fmt::Debug for CSub {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.sub"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1rd), &self.rs1rd())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for CSub {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.sub")?;
+        write!(f, " {:?}", self.rs1rd())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
     }
 }
 pub struct CXor(pub u16);
@@ -252,15 +376,32 @@ impl CXor {
     pub const fn rs1rd(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
     pub const fn rs2(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 2) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
+    }
+}
+impl std::fmt::Debug for CXor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.xor"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1rd), &self.rs1rd())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for CXor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.xor")?;
+        write!(f, " {:?}", self.rs1rd())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
     }
 }
 pub struct COr(pub u16);
@@ -269,15 +410,32 @@ impl COr {
     pub const fn rs1rd(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
     pub const fn rs2(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 2) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
+    }
+}
+impl std::fmt::Debug for COr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.or"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1rd), &self.rs1rd())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for COr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.or")?;
+        write!(f, " {:?}", self.rs1rd())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
     }
 }
 pub struct CAnd(pub u16);
@@ -286,49 +444,32 @@ impl CAnd {
     pub const fn rs1rd(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
     pub const fn rs2(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 2) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
 }
-pub struct CSubw(pub u16);
-impl CSubw {
-    #[inline]
-    pub const fn rs1rd(&self) -> Reg {
-        {
-            let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
-        }
-    }
-    #[inline]
-    pub const fn rs2(&self) -> Reg {
-        {
-            let acc = ((self.0 as u32) >> 2) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
-        }
+impl std::fmt::Debug for CAnd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.and"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1rd), &self.rs1rd())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
     }
 }
-pub struct CAddw(pub u16);
-impl CAddw {
-    #[inline]
-    pub const fn rs1rd(&self) -> Reg {
-        {
-            let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
-        }
-    }
-    #[inline]
-    pub const fn rs2(&self) -> Reg {
-        {
-            let acc = ((self.0 as u32) >> 2) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
-        }
+impl std::fmt::Display for CAnd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.and")?;
+        write!(f, " {:?}", self.rs1rd())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
     }
 }
 pub struct CJ(pub u16);
@@ -343,8 +484,23 @@ impl CJ {
             | (((self.0 as u32) << 1) & 0b10000000)
             | (((self.0 as u32) >> 2) & 0b1110)
             | (((self.0 as u32) << 3) & 0b100000))
-            << 21) as i32)
-            >> 21
+            << 20) as i32)
+            >> 20
+    }
+}
+impl std::fmt::Debug for CJ {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.j"))
+            .field("inst", &self.0)
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for CJ {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.j")?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
     }
 }
 pub struct CBeqz(pub u16);
@@ -353,7 +509,7 @@ impl CBeqz {
     pub const fn rs1(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
@@ -362,8 +518,25 @@ impl CBeqz {
             | ((((self.0 as u32) << 1) & 0b11000000)
                 | (((self.0 as u32) >> 2) & 0b110)
                 | (((self.0 as u32) << 3) & 0b100000)))
-            << 24) as i32)
-            >> 24
+            << 23) as i32)
+            >> 23
+    }
+}
+impl std::fmt::Debug for CBeqz {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.beqz"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for CBeqz {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.beqz")?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
     }
 }
 pub struct CBnez(pub u16);
@@ -372,7 +545,7 @@ impl CBnez {
     pub const fn rs1(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
@@ -381,23 +554,25 @@ impl CBnez {
             | ((((self.0 as u32) << 1) & 0b11000000)
                 | (((self.0 as u32) >> 2) & 0b110)
                 | (((self.0 as u32) << 3) & 0b100000)))
-            << 24) as i32)
-            >> 24
+            << 23) as i32)
+            >> 23
     }
 }
-pub struct CFldsp(pub u16);
-impl CFldsp {
-    #[inline]
-    pub const fn frd(&self) -> FReg {
-        {
-            let acc = ((self.0 as u32) >> 7) & 0b11111;
-            unsafe { FReg::from_u5(acc as u8) }
-        }
+impl std::fmt::Debug for CBnez {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.bnez"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(imm), &self.imm())
+            .finish()
     }
-    #[inline]
-    pub const fn imm(&self) -> u32 {
-        (((self.0 as u32) >> 7) & 0b100000)
-            | ((((self.0 as u32) >> 2) & 0b11000) | (((self.0 as u32) << 4) & 0b111000000))
+}
+impl std::fmt::Display for CBnez {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.bnez")?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
     }
 }
 pub struct CLwsp(pub u16);
@@ -415,13 +590,30 @@ impl CLwsp {
             | ((((self.0 as u32) >> 2) & 0b11100) | (((self.0 as u32) << 4) & 0b11000000))
     }
 }
+impl std::fmt::Debug for CLwsp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.lwsp"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for CLwsp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.lwsp")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
+    }
+}
 pub struct CJr(pub u16);
 impl CJr {
     #[inline]
     pub const fn rd(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 12) & 0b1;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
@@ -430,6 +622,23 @@ impl CJr {
             let acc = ((self.0 as u32) >> 7) & 0b11111;
             unsafe { Reg::from_u5(acc as u8) }
         }
+    }
+}
+impl std::fmt::Debug for CJr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.jr"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .finish()
+    }
+}
+impl std::fmt::Display for CJr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.jr")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        Ok(())
     }
 }
 pub struct CMv(pub u16);
@@ -449,15 +658,45 @@ impl CMv {
         }
     }
 }
+impl std::fmt::Debug for CMv {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.mv"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for CMv {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.mv")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
+    }
+}
 pub struct CEbreak(pub u16);
 impl CEbreak {}
+impl std::fmt::Debug for CEbreak {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.ebreak"))
+            .field("inst", &self.0)
+            .finish()
+    }
+}
+impl std::fmt::Display for CEbreak {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.ebreak")?;
+        Ok(())
+    }
+}
 pub struct CJalr(pub u16);
 impl CJalr {
     #[inline]
     pub const fn rd(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 12) & 0b1;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
@@ -466,6 +705,23 @@ impl CJalr {
             let acc = ((self.0 as u32) >> 7) & 0b11111;
             unsafe { Reg::from_u5(acc as u8) }
         }
+    }
+}
+impl std::fmt::Debug for CJalr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.jalr"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .finish()
+    }
+}
+impl std::fmt::Display for CJalr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.jalr")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        Ok(())
     }
 }
 pub struct CAdd(pub u16);
@@ -485,18 +741,21 @@ impl CAdd {
         }
     }
 }
-pub struct CFsdsp(pub u16);
-impl CFsdsp {
-    #[inline]
-    pub const fn frs2(&self) -> FReg {
-        {
-            let acc = ((self.0 as u32) >> 2) & 0b11111;
-            unsafe { FReg::from_u5(acc as u8) }
-        }
+impl std::fmt::Debug for CAdd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.add"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1rd), &self.rs1rd())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
     }
-    #[inline]
-    pub const fn imm(&self) -> u32 {
-        (((self.0 as u32) >> 7) & 0b111000) | (((self.0 as u32) >> 1) & 0b111000000)
+}
+impl std::fmt::Display for CAdd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.add")?;
+        write!(f, " {:?}", self.rs1rd())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
     }
 }
 pub struct CSwsp(pub u16);
@@ -513,25 +772,61 @@ impl CSwsp {
         (((self.0 as u32) >> 7) & 0b111100) | (((self.0 as u32) >> 1) & 0b11000000)
     }
 }
+impl std::fmt::Debug for CSwsp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.swsp"))
+            .field("inst", &self.0)
+            .field(stringify!(rs2), &self.rs2())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for CSwsp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.swsp")?;
+        write!(f, " {:?}", self.rs2())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
+    }
+}
 pub struct CLd(pub u16);
 impl CLd {
     #[inline]
     pub const fn rd(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 2) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
     pub const fn rs1(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
     pub const fn imm(&self) -> u32 {
         (((self.0 as u32) >> 7) & 0b111000) | (((self.0 as u32) << 1) & 0b11000000)
+    }
+}
+impl std::fmt::Debug for CLd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.ld"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for CLd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.ld")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
     }
 }
 pub struct CSd(pub u16);
@@ -540,19 +835,38 @@ impl CSd {
     pub const fn rs1(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
     pub const fn rs2(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 2) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
     pub const fn imm(&self) -> u32 {
         (((self.0 as u32) >> 7) & 0b111000) | (((self.0 as u32) << 1) & 0b11000000)
+    }
+}
+impl std::fmt::Debug for CSd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.sd"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for CSd {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.sd")?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
     }
 }
 pub struct CAddiw(pub u16);
@@ -566,8 +880,25 @@ impl CAddiw {
     }
     #[inline]
     pub const fn imm(&self) -> i32 {
-        ((((((self.0 as u32) >> 7) & 0b100000) | (((self.0 as u32) >> 2) & 0b11111)) << 27) as i32)
-            >> 27
+        ((((((self.0 as u32) >> 7) & 0b100000) | (((self.0 as u32) >> 2) & 0b11111)) << 26) as i32)
+            >> 26
+    }
+}
+impl std::fmt::Debug for CAddiw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.addiw"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1rd), &self.rs1rd())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for CAddiw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.addiw")?;
+        write!(f, " {:?}", self.rs1rd())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
     }
 }
 pub struct CSrli(pub u16);
@@ -576,12 +907,29 @@ impl CSrli {
     pub const fn rs1rd(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
     pub const fn shamt(&self) -> u32 {
         (((self.0 as u32) >> 7) & 0b100000) | (((self.0 as u32) >> 2) & 0b11111)
+    }
+}
+impl std::fmt::Debug for CSrli {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.srli"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1rd), &self.rs1rd())
+            .field(stringify!(shamt), &self.shamt())
+            .finish()
+    }
+}
+impl std::fmt::Display for CSrli {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.srli")?;
+        write!(f, " {:?}", self.rs1rd())?;
+        write!(f, " {:?}", self.shamt())?;
+        Ok(())
     }
 }
 pub struct CSrai(pub u16);
@@ -590,12 +938,29 @@ impl CSrai {
     pub const fn rs1rd(&self) -> Reg {
         {
             let acc = ((self.0 as u32) >> 7) & 0b111;
-            unsafe { Reg::from_u5(acc as u8) }
+            unsafe { Reg::from_u5(acc as u8 + 8) }
         }
     }
     #[inline]
     pub const fn shamt(&self) -> u32 {
         (((self.0 as u32) >> 7) & 0b100000) | (((self.0 as u32) >> 2) & 0b11111)
+    }
+}
+impl std::fmt::Debug for CSrai {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.srai"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1rd), &self.rs1rd())
+            .field(stringify!(shamt), &self.shamt())
+            .finish()
+    }
+}
+impl std::fmt::Display for CSrai {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.srai")?;
+        write!(f, " {:?}", self.rs1rd())?;
+        write!(f, " {:?}", self.shamt())?;
+        Ok(())
     }
 }
 pub struct CSlli(pub u16);
@@ -610,6 +975,91 @@ impl CSlli {
     #[inline]
     pub const fn shamt(&self) -> u32 {
         (((self.0 as u32) >> 7) & 0b100000) | (((self.0 as u32) >> 2) & 0b11111)
+    }
+}
+impl std::fmt::Debug for CSlli {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.slli"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1rd), &self.rs1rd())
+            .field(stringify!(shamt), &self.shamt())
+            .finish()
+    }
+}
+impl std::fmt::Display for CSlli {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.slli")?;
+        write!(f, " {:?}", self.rs1rd())?;
+        write!(f, " {:?}", self.shamt())?;
+        Ok(())
+    }
+}
+pub struct CSubw(pub u16);
+impl CSubw {
+    #[inline]
+    pub const fn rs1rd(&self) -> Reg {
+        {
+            let acc = ((self.0 as u32) >> 7) & 0b111;
+            unsafe { Reg::from_u5(acc as u8 + 8) }
+        }
+    }
+    #[inline]
+    pub const fn rs2(&self) -> Reg {
+        {
+            let acc = ((self.0 as u32) >> 2) & 0b111;
+            unsafe { Reg::from_u5(acc as u8 + 8) }
+        }
+    }
+}
+impl std::fmt::Debug for CSubw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.subw"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1rd), &self.rs1rd())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for CSubw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.subw")?;
+        write!(f, " {:?}", self.rs1rd())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
+    }
+}
+pub struct CAddw(pub u16);
+impl CAddw {
+    #[inline]
+    pub const fn rs1rd(&self) -> Reg {
+        {
+            let acc = ((self.0 as u32) >> 7) & 0b111;
+            unsafe { Reg::from_u5(acc as u8 + 8) }
+        }
+    }
+    #[inline]
+    pub const fn rs2(&self) -> Reg {
+        {
+            let acc = ((self.0 as u32) >> 2) & 0b111;
+            unsafe { Reg::from_u5(acc as u8 + 8) }
+        }
+    }
+}
+impl std::fmt::Debug for CAddw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.addw"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1rd), &self.rs1rd())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for CAddw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.addw")?;
+        write!(f, " {:?}", self.rs1rd())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
     }
 }
 pub struct CLdsp(pub u16);
@@ -627,6 +1077,23 @@ impl CLdsp {
             | ((((self.0 as u32) >> 2) & 0b11000) | (((self.0 as u32) << 4) & 0b111000000))
     }
 }
+impl std::fmt::Debug for CLdsp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.ldsp"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for CLdsp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.ldsp")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
+    }
+}
 pub struct CSdsp(pub u16);
 impl CSdsp {
     #[inline]
@@ -639,5 +1106,100 @@ impl CSdsp {
     #[inline]
     pub const fn imm(&self) -> u32 {
         (((self.0 as u32) >> 7) & 0b111000) | (((self.0 as u32) >> 1) & 0b111000000)
+    }
+}
+impl std::fmt::Debug for CSdsp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("c.sdsp"))
+            .field("inst", &self.0)
+            .field(stringify!(rs2), &self.rs2())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for CSdsp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "c.sdsp")?;
+        write!(f, " {:?}", self.rs2())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
+    }
+}
+impl std::fmt::Debug for Rv64c {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rv64c::CAddi4spn(inst) => write!(f, "{inst:?}"),
+            Rv64c::CLw(inst) => write!(f, "{inst:?}"),
+            Rv64c::CSw(inst) => write!(f, "{inst:?}"),
+            Rv64c::CNop(inst) => write!(f, "{inst:?}"),
+            Rv64c::CAddi(inst) => write!(f, "{inst:?}"),
+            Rv64c::CLi(inst) => write!(f, "{inst:?}"),
+            Rv64c::CAddi16sp(inst) => write!(f, "{inst:?}"),
+            Rv64c::CLui(inst) => write!(f, "{inst:?}"),
+            Rv64c::CAndi(inst) => write!(f, "{inst:?}"),
+            Rv64c::CSub(inst) => write!(f, "{inst:?}"),
+            Rv64c::CXor(inst) => write!(f, "{inst:?}"),
+            Rv64c::COr(inst) => write!(f, "{inst:?}"),
+            Rv64c::CAnd(inst) => write!(f, "{inst:?}"),
+            Rv64c::CJ(inst) => write!(f, "{inst:?}"),
+            Rv64c::CBeqz(inst) => write!(f, "{inst:?}"),
+            Rv64c::CBnez(inst) => write!(f, "{inst:?}"),
+            Rv64c::CLwsp(inst) => write!(f, "{inst:?}"),
+            Rv64c::CJr(inst) => write!(f, "{inst:?}"),
+            Rv64c::CMv(inst) => write!(f, "{inst:?}"),
+            Rv64c::CEbreak(inst) => write!(f, "{inst:?}"),
+            Rv64c::CJalr(inst) => write!(f, "{inst:?}"),
+            Rv64c::CAdd(inst) => write!(f, "{inst:?}"),
+            Rv64c::CSwsp(inst) => write!(f, "{inst:?}"),
+            Rv64c::CLd(inst) => write!(f, "{inst:?}"),
+            Rv64c::CSd(inst) => write!(f, "{inst:?}"),
+            Rv64c::CAddiw(inst) => write!(f, "{inst:?}"),
+            Rv64c::CSrli(inst) => write!(f, "{inst:?}"),
+            Rv64c::CSrai(inst) => write!(f, "{inst:?}"),
+            Rv64c::CSlli(inst) => write!(f, "{inst:?}"),
+            Rv64c::CSubw(inst) => write!(f, "{inst:?}"),
+            Rv64c::CAddw(inst) => write!(f, "{inst:?}"),
+            Rv64c::CLdsp(inst) => write!(f, "{inst:?}"),
+            Rv64c::CSdsp(inst) => write!(f, "{inst:?}"),
+        }
+    }
+}
+impl std::fmt::Display for Rv64c {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rv64c::CAddi4spn(inst) => write!(f, "{inst}"),
+            Rv64c::CLw(inst) => write!(f, "{inst}"),
+            Rv64c::CSw(inst) => write!(f, "{inst}"),
+            Rv64c::CNop(inst) => write!(f, "{inst}"),
+            Rv64c::CAddi(inst) => write!(f, "{inst}"),
+            Rv64c::CLi(inst) => write!(f, "{inst}"),
+            Rv64c::CAddi16sp(inst) => write!(f, "{inst}"),
+            Rv64c::CLui(inst) => write!(f, "{inst}"),
+            Rv64c::CAndi(inst) => write!(f, "{inst}"),
+            Rv64c::CSub(inst) => write!(f, "{inst}"),
+            Rv64c::CXor(inst) => write!(f, "{inst}"),
+            Rv64c::COr(inst) => write!(f, "{inst}"),
+            Rv64c::CAnd(inst) => write!(f, "{inst}"),
+            Rv64c::CJ(inst) => write!(f, "{inst}"),
+            Rv64c::CBeqz(inst) => write!(f, "{inst}"),
+            Rv64c::CBnez(inst) => write!(f, "{inst}"),
+            Rv64c::CLwsp(inst) => write!(f, "{inst}"),
+            Rv64c::CJr(inst) => write!(f, "{inst}"),
+            Rv64c::CMv(inst) => write!(f, "{inst}"),
+            Rv64c::CEbreak(inst) => write!(f, "{inst}"),
+            Rv64c::CJalr(inst) => write!(f, "{inst}"),
+            Rv64c::CAdd(inst) => write!(f, "{inst}"),
+            Rv64c::CSwsp(inst) => write!(f, "{inst}"),
+            Rv64c::CLd(inst) => write!(f, "{inst}"),
+            Rv64c::CSd(inst) => write!(f, "{inst}"),
+            Rv64c::CAddiw(inst) => write!(f, "{inst}"),
+            Rv64c::CSrli(inst) => write!(f, "{inst}"),
+            Rv64c::CSrai(inst) => write!(f, "{inst}"),
+            Rv64c::CSlli(inst) => write!(f, "{inst}"),
+            Rv64c::CSubw(inst) => write!(f, "{inst}"),
+            Rv64c::CAddw(inst) => write!(f, "{inst}"),
+            Rv64c::CLdsp(inst) => write!(f, "{inst}"),
+            Rv64c::CSdsp(inst) => write!(f, "{inst}"),
+        }
     }
 }

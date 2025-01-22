@@ -1,11 +1,12 @@
+use std::ffi::CStr;
+
 use rand::RngCore;
 
-use crate::cpu::Hart32;
+use crate::{cpu::Hart32, memory::GuestPtr};
 
-pub fn getrandom(_: &mut Hart32, buf: *mut u8, len: u32, _flags: u32) -> u32 {
-    let buf_as_slice = unsafe { std::slice::from_raw_parts_mut(buf, len as usize) };
+pub fn getrandom(_: &mut Hart32, mut buf: GuestPtr<[u8]>, len: u32, _flags: u32) -> u32 {
     let mut rng = rand::thread_rng();
-    rng.fill_bytes(buf_as_slice);
+    rng.fill_bytes(buf.read_mut(len as usize));
 
     // "getrandom returns the number of bytes read on success."
     len
@@ -13,20 +14,19 @@ pub fn getrandom(_: &mut Hart32, buf: *mut u8, len: u32, _flags: u32) -> u32 {
 
 pub fn riscv_hwprobe(
     _hart: &mut Hart32,
-    _pairs: *mut u8,
+    _pairs: GuestPtr<u8>,
     _pair_count: u32,
     _cpusetsize: u32,
-    _cpus: *mut u8,
+    _cpus: GuestPtr<u8>,
     _flags: u32,
 ) -> i32 {
     // Return error code -- we don't implement this.
     -1
 }
 
-pub fn brk(hart: &mut Hart32, addr: *mut u8) -> u32 {
-    let guest = hart.mem.host_to_guest_ptr(addr);
-    if guest > hart.mem.brk {
-        hart.mem.brk = guest;
+pub fn brk(hart: &mut Hart32, ptr: GuestPtr<u8>) -> u32 {
+    if ptr.addr() > hart.mem.brk {
+        hart.mem.brk = ptr.addr();
     }
 
     hart.mem.brk
@@ -37,7 +37,7 @@ pub fn gettid(_hart: &mut Hart32) -> u32 {
     0x123
 }
 
-pub fn set_tid_address(hart: &mut Hart32, _tidptr: *mut u32) -> u32 {
+pub fn set_tid_address(hart: &mut Hart32, _tidptr: GuestPtr<u32>) -> u32 {
     // We don't implement this syscall.
     gettid(hart)
 }
@@ -47,38 +47,29 @@ pub fn getpid(_hart: &mut Hart32) -> u32 {
     1
 }
 
-pub fn set_robust_list(_hart: &mut Hart32, _head: *mut u8, _len: u32) -> u32 {
+pub fn set_robust_list(_hart: &mut Hart32, _head: GuestPtr<u8>, _len: u32) -> u32 {
     // We don't implement this syscall.
     0
 }
 
-pub fn getrlimit(_hart: &mut Hart32, resource: u32, rlim: *mut u8) -> u32 {
-    #[repr(C)]
-    struct RLimit {
-        rlim_cur: u64,
-        rlim_max: u64,
-    }
-    let rlim = rlim as *mut RLimit;
+#[repr(C)]
+pub(crate) struct RLimit {
+    rlim_cur: u64,
+    rlim_max: u64,
+}
+pub fn getrlimit(_hart: &mut Hart32, resource: u32, rlim: GuestPtr<RLimit>) -> u32 {
     // We don't implement this syscall.
     match resource {
-        // RLIMIT_STACK = 3
-        3 => {
-            unsafe {
-                rlim.write_unaligned(RLimit {
-                    rlim_cur: 0x800000, // 8MB
-                    rlim_max: 0x800000, // 8MB
-                });
-            };
-        }
-        _ => {
-            // For other resources, return "unlimited"
-            unsafe {
-                rlim.write_unaligned(RLimit {
-                    rlim_cur: u64::MAX,
-                    rlim_max: u64::MAX,
-                });
-            };
-        }
+        // RLIMIT_STACK = 3, 8MB of stack
+        3 => rlim.store(RLimit {
+            rlim_cur: 0x800000,
+            rlim_max: 0x800000,
+        }),
+        // For other resources, return "unlimited"
+        _ => rlim.store(RLimit {
+            rlim_cur: u64::MAX,
+            rlim_max: u64::MAX,
+        }),
     }
 
     0
@@ -87,19 +78,23 @@ pub fn getrlimit(_hart: &mut Hart32, resource: u32, rlim: *mut u8) -> u32 {
 pub fn readlinkat(
     _hart: &mut Hart32,
     _dirfd: i32,
-    path: *const u8,
-    buf: *mut u8,
+    path: GuestPtr<CStr>,
+    buf: GuestPtr<u8>,
     bufsiz: u32,
 ) -> i32 {
     // Read the pathname to see what's being requested
-    let pathname = unsafe { std::ffi::CStr::from_ptr(path as *const i8) };
+    let pathname = path.read();
     if pathname == c"/proc/self/exe" {
         // TODO: Handling /proc/self/exe specifically
         let fake_path = c"/tmp/main";
         let len = fake_path.count_bytes().min(bufsiz as usize);
 
         unsafe {
-            std::ptr::copy_nonoverlapping(fake_path.as_ptr() as *const u8, buf, len);
+            std::ptr::copy_nonoverlapping(
+                fake_path.as_ptr() as *const u8,
+                buf.as_host_ptr_mut(),
+                len,
+            );
         }
 
         len as i32
@@ -109,18 +104,18 @@ pub fn readlinkat(
     }
 }
 
-pub fn write(_hart: &mut Hart32, fd: i32, buf: *const u8, count: u32) -> i32 {
+pub fn write(_hart: &mut Hart32, fd: i32, buf: GuestPtr<[u8]>, count: u32) -> i32 {
     match fd {
         1 => {
             // Write to stdout
-            let buf = unsafe { std::slice::from_raw_parts(buf, count as usize) };
+            let buf = buf.read(count as usize);
             let s = std::str::from_utf8(buf).unwrap();
             print!("{}", s);
             count as i32
         }
         2 => {
             // Write to stderr
-            let buf = unsafe { std::slice::from_raw_parts(buf, count as usize) };
+            let buf = buf.read(count as usize);
             let s = std::str::from_utf8(buf).unwrap();
             eprint!("{}", s);
             count as i32
@@ -129,17 +124,16 @@ pub fn write(_hart: &mut Hart32, fd: i32, buf: *const u8, count: u32) -> i32 {
     }
 }
 
-pub fn writev(_hart: &mut Hart32, fd: i32, iov: *const u8, iovcnt: i32) -> i32 {
-    #[repr(C)]
-    struct Iovec {
-        iov_base: *const u8,
-        iov_len: u32,
-    }
-
-    let iov = unsafe { std::slice::from_raw_parts(iov as *const Iovec, iovcnt as usize) };
+#[repr(C)]
+pub(crate) struct Iovec {
+    iov_base: *const u8,
+    iov_len: u32,
+}
+pub fn writev(_hart: &mut Hart32, fd: i32, iov: GuestPtr<[Iovec]>, iovcnt: i32) -> i32 {
     let mut total = 0;
-    for iovec in iov {
-        let count = write(_hart, fd, iovec.iov_base, iovec.iov_len);
+    for &Iovec { iov_base, iov_len } in iov.read(iovcnt as usize) {
+        let ptr = GuestPtr::new(iov.base(), iov_base as u32);
+        let count = write(_hart, fd, ptr, iov_len);
         if count < 0 {
             return count;
         }
@@ -193,17 +187,16 @@ pub fn munmap(hart: &mut Hart32, addr: u32, len: u32) -> u32 {
 
 pub fn futex(
     _hart: &mut Hart32,
-    uaddr: *mut i32,
+    uaddr: GuestPtr<i32>,
     op: i32,
     val: i32,
-    _utime: *const i32,
-    _uaddr2: *mut i32,
+    _utime: GuestPtr<i32>,
+    _uaddr2: GuestPtr<i32>,
     _val3: i32,
 ) -> i32 {
     match op & 0x7f {
         0 => {
-            let current = unsafe { *uaddr };
-            if current == val {
+            if uaddr.read() == val {
                 0
             } else {
                 -libc::EAGAIN
@@ -214,7 +207,7 @@ pub fn futex(
     }
 }
 
-pub fn mprotect(_hart: &mut Hart32, _addr: *mut u8, _len: u32, _prot: u32) -> u32 {
+pub fn mprotect(_hart: &mut Hart32, _addr: GuestPtr<u8>, _len: u32, _prot: u32) -> u32 {
     // TODO
     0
 }
@@ -222,10 +215,21 @@ pub fn mprotect(_hart: &mut Hart32, _addr: *mut u8, _len: u32, _prot: u32) -> u3
 pub fn statx(
     _hart: &mut Hart32,
     _dirfd: i32,
-    _pathname: *const u8,
+    _pathname: GuestPtr<u8>,
     _flags: u32,
     _mask: u32,
-    _statxbuf: *mut u8,
+    _statxbuf: GuestPtr<u8>,
+) -> i32 {
+    // stubbed out
+    0
+}
+
+pub fn rt_sigaction(
+    _hart: &mut Hart32,
+    _signum: i32,
+    _act: GuestPtr<u8>,
+    _oldact: GuestPtr<u8>,
+    _sigsetsize: u32,
 ) -> i32 {
     // stubbed out
     0
@@ -234,13 +238,13 @@ pub fn statx(
 pub fn rt_sigprocmask(
     _hart: &mut Hart32,
     _how: i32,
-    _set: *const u8,
-    oldset: *mut u8,
+    _set: GuestPtr<u8>,
+    oldset: GuestPtr<u8>,
     sigsetsize: u32,
 ) -> i32 {
     if !oldset.is_null() {
         unsafe {
-            std::ptr::write_bytes(oldset, 0, sigsetsize as usize);
+            std::ptr::write_bytes(oldset.as_host_ptr_mut(), 0, sigsetsize as usize);
         }
     }
 
@@ -248,6 +252,18 @@ pub fn rt_sigprocmask(
 }
 
 pub fn tgkill(_hart: &mut Hart32, _tgid: i32, _tid: i32, _sig: i32) -> i32 {
+    // stubbed out
+    0
+}
+
+pub fn ppoll(
+    _hart: &mut Hart32,
+    _fds: GuestPtr<u8>,
+    _nfds: u32,
+    _tsp: GuestPtr<u8>,
+    _sigmask: GuestPtr<u8>,
+    _sigsetsize: u32,
+) -> i32 {
     // stubbed out
     0
 }

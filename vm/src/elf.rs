@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use goblin::elf::{
     dynamic::DT_NEEDED,
-    program_header::{PT_DYNAMIC, PT_LOAD},
+    program_header::PT_LOAD,
     reloc::{R_RISCV_32, R_RISCV_JUMP_SLOT, R_RISCV_RELATIVE},
 };
 
@@ -88,6 +88,7 @@ pub fn load_elf<'a>(cpu: &mut Hart32, bytes: &'a [u8]) -> goblin::elf::Elf<'a> {
     }
 
     // Load main program segments
+    let mut brk = 0;
     for ph in &elf.program_headers {
         if ph.p_type == PT_LOAD {
             let vaddr = ph.p_vaddr as u32;
@@ -97,6 +98,9 @@ pub fn load_elf<'a>(cpu: &mut Hart32, bytes: &'a [u8]) -> goblin::elf::Elf<'a> {
             }
             for i in ph.p_filesz as usize..ph.p_memsz as usize {
                 cpu.mem.store::<u8>(vaddr + i as u32, 0);
+            }
+            if vaddr + ph.p_memsz as u32 > brk {
+                brk = vaddr + ph.p_memsz as u32;
             }
         }
     }
@@ -127,6 +131,9 @@ pub fn load_elf<'a>(cpu: &mut Hart32, bytes: &'a [u8]) -> goblin::elf::Elf<'a> {
             }
         }
     }
+    // Align and set brk
+    brk = (brk + 0xfff) & !0xfff;
+    cpu.mem.brk = brk;
 
     elf
 }

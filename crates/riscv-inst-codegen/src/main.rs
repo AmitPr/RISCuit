@@ -7,6 +7,7 @@ use std::{collections::HashMap, io::Write, path::Path};
 use opcode::Opcode;
 use proc_macro2::TokenStream;
 use quote::quote;
+use syn::Ident;
 
 const RISCV_OPERANDS: &str = include_str!("../riscv-meta/operands");
 const RISCV_OPCODES: &str = include_str!("../riscv-meta/opcodes");
@@ -47,7 +48,7 @@ fn main() {
             .map(|(isa, _)| isa)
             .chain(base_gen.iter().map(|(isa, _)| isa))
             .map(|isa| {
-                let mod_name = syn::Ident::new(isa, proc_macro2::Span::call_site());
+                let mod_name = Ident::new(isa, proc_macro2::Span::call_site());
                 quote! {
                     pub mod #mod_name;
                 }
@@ -99,13 +100,14 @@ fn codegen() -> Vec<(String, String)> {
         .map(Opcode::parse)
         .collect::<Vec<_>>();
 
-    let accessors: HashMap<String, TokenStream> = operands
+    let accessors: HashMap<String, (Ident, TokenStream)> = operands
         .iter()
         .map(|operand| {
             let operand_name = &operand[0];
             let operand_accessor_fn = generate_operand_accessor_fn(operand);
+            let fn_ident = Ident::new(&operand[3], proc_macro2::Span::call_site());
 
-            (operand_name.clone(), operand_accessor_fn)
+            (operand_name.clone(), (fn_ident, operand_accessor_fn))
         })
         .collect();
 
@@ -155,12 +157,45 @@ fn codegen_base_isas(isas: Vec<String>) -> Vec<(String, String)> {
         let imports = relevant_isas
             .clone()
             .map(|isa| {
-                let isa_mod = syn::Ident::new(isa, proc_macro2::Span::call_site());
+                let isa_mod = Ident::new(isa, proc_macro2::Span::call_site());
                 quote! {
                     pub use super::#isa_mod::*;
                 }
             })
             .collect::<Vec<_>>();
+
+        let idents = relevant_isas
+            .clone()
+            .map(|isa| isa_ident(isa))
+            .collect::<Vec<_>>();
+
+        let impls = {
+            quote! {
+                #(
+                    impl From<#idents> for #base_ident {
+                        fn from(inst: #idents) -> Self {
+                            #base_ident::#idents(inst)
+                        }
+                    }
+                )*
+
+                impl std::fmt::Debug for #base_ident {
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        match self {
+                            #( #base_ident::#idents(inst) => write!(f, "{inst:?}") ),*
+                        }
+                    }
+                }
+
+                impl std::fmt::Display for #base_ident {
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        match self {
+                            #( #base_ident::#idents(inst) => write!(f, "{inst}") ),*
+                        }
+                    }
+                }
+            }
+        };
 
         let gen = syn::parse_quote! {
             #( #imports )*
@@ -172,6 +207,8 @@ fn codegen_base_isas(isas: Vec<String>) -> Vec<(String, String)> {
             impl #base_ident {
                 #decode_fn
             }
+
+            #impls
         };
 
         results.push((base.to_string(), prettyplease::unparse(&gen)));
@@ -181,7 +218,7 @@ fn codegen_base_isas(isas: Vec<String>) -> Vec<(String, String)> {
 }
 
 fn generate_operand_accessor_fn(operand: &[String]) -> TokenStream {
-    let fn_ident = syn::Ident::new(&operand[3], proc_macro2::Span::call_site());
+    let fn_ident = Ident::new(&operand[3], proc_macro2::Span::call_site());
     let operand_type = match operand[2].as_str() {
         // Argument
         "arg" => quote!(u32),
@@ -199,11 +236,13 @@ fn generate_operand_accessor_fn(operand: &[String]) -> TokenStream {
         "uimm" => quote!(u32),
         _ => panic!("Unknown operand type: {}", operand[2]),
     };
-    let accessor = bitspec::serialize_bitspecs(
-        quote! { (self.0 as u32) },
-        operand_type.clone(),
-        &operand[1],
-    );
+    // Signal to bitspec to +8 this register
+    let spec_ty = if operand[2] == "creg" {
+        quote!(CReg)
+    } else {
+        operand_type.clone()
+    };
+    let accessor = bitspec::serialize_bitspecs(quote! { (self.0 as u32) }, spec_ty, &operand[1]);
 
     // TODO: Sign extension
     quote! {
@@ -226,7 +265,7 @@ fn group_by_isa(opcodes: Vec<Opcode>) -> HashMap<String, Vec<Opcode>> {
     isas
 }
 
-pub(crate) fn isa_ident(isa: &str) -> syn::Ident {
+pub(crate) fn isa_ident(isa: &str) -> Ident {
     // capitalize first letter
     let isa = isa
         .chars()
@@ -235,36 +274,53 @@ pub(crate) fn isa_ident(isa: &str) -> syn::Ident {
         .to_uppercase()
         .chain(isa.chars().skip(1))
         .collect::<String>();
-    syn::Ident::new(&isa, proc_macro2::Span::call_site())
+    Ident::new(&isa, proc_macro2::Span::call_site())
 }
 
 fn generate_isa_enum(
     isa: String,
     opcodes: Vec<Opcode>,
-    accessors: &HashMap<String, TokenStream>,
+    accessors: &HashMap<String, (Ident, TokenStream)>,
 ) -> TokenStream {
     let rv_c = isa.contains("c");
     let isa_ident = isa_ident(&isa);
 
     let variants = opcodes
         .iter()
-        .map(|opcode| {
-            let ident = opcode.name_ident();
-            quote! {
-                #ident(#ident),
-            }
-        })
+        .map(|opcode| opcode.name_ident())
         .collect::<Vec<_>>();
 
     let opcode_structs = opcodes
         .iter()
         .map(|opcode| opcode.codegen_struct(accessors, rv_c))
         .collect::<Vec<_>>();
+
+    let impls = quote! {
+            impl std::fmt::Debug for #isa_ident {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    match self {
+                        #( #isa_ident::#variants(inst) => write!(f, "{inst:?}") ),*
+                    }
+                }
+            }
+
+            impl std::fmt::Display for #isa_ident {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    match self {
+                        #( #isa_ident::#variants(inst) => write!(f, "{inst}") ),*
+                    }
+                }
+            }
+
+    };
+
     quote! {
         pub enum #isa_ident {
-            #(#variants)*
+            #(#variants(#variants)),*
         }
 
         #(#opcode_structs)*
+
+        #impls
     }
 }

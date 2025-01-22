@@ -41,6 +41,27 @@ impl LrW {
         (self.0 >> 25) & 0b1
     }
 }
+impl std::fmt::Debug for LrW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("lr.w"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(aq), &self.aq())
+            .field(stringify!(rl), &self.rl())
+            .finish()
+    }
+}
+impl std::fmt::Display for LrW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "lr.w")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.aq())?;
+        write!(f, " {:?}", self.rl())?;
+        Ok(())
+    }
+}
 pub struct ScW(pub u32);
 impl ScW {
     #[inline]
@@ -71,6 +92,29 @@ impl ScW {
     #[inline]
     pub const fn rl(&self) -> u32 {
         (self.0 >> 25) & 0b1
+    }
+}
+impl std::fmt::Debug for ScW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("sc.w"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .field(stringify!(aq), &self.aq())
+            .field(stringify!(rl), &self.rl())
+            .finish()
+    }
+}
+impl std::fmt::Display for ScW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "sc.w")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        write!(f, " {:?}", self.aq())?;
+        write!(f, " {:?}", self.rl())?;
+        Ok(())
     }
 }
 pub struct AmoswapW(pub u32);
@@ -105,6 +149,29 @@ impl AmoswapW {
         (self.0 >> 25) & 0b1
     }
 }
+impl std::fmt::Debug for AmoswapW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("amoswap.w"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .field(stringify!(aq), &self.aq())
+            .field(stringify!(rl), &self.rl())
+            .finish()
+    }
+}
+impl std::fmt::Display for AmoswapW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "amoswap.w")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        write!(f, " {:?}", self.aq())?;
+        write!(f, " {:?}", self.rl())?;
+        Ok(())
+    }
+}
 pub struct AmoaddW(pub u32);
 impl AmoaddW {
     #[inline]
@@ -135,6 +202,29 @@ impl AmoaddW {
     #[inline]
     pub const fn rl(&self) -> u32 {
         (self.0 >> 25) & 0b1
+    }
+}
+impl std::fmt::Debug for AmoaddW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("amoadd.w"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .field(stringify!(aq), &self.aq())
+            .field(stringify!(rl), &self.rl())
+            .finish()
+    }
+}
+impl std::fmt::Display for AmoaddW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "amoadd.w")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        write!(f, " {:?}", self.aq())?;
+        write!(f, " {:?}", self.rl())?;
+        Ok(())
     }
 }
 pub struct AmoxorW(pub u32);
@@ -169,6 +259,29 @@ impl AmoxorW {
         (self.0 >> 25) & 0b1
     }
 }
+impl std::fmt::Debug for AmoxorW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("amoxor.w"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .field(stringify!(aq), &self.aq())
+            .field(stringify!(rl), &self.rl())
+            .finish()
+    }
+}
+impl std::fmt::Display for AmoxorW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "amoxor.w")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        write!(f, " {:?}", self.aq())?;
+        write!(f, " {:?}", self.rl())?;
+        Ok(())
+    }
+}
 pub struct AmoorW(pub u32);
 impl AmoorW {
     #[inline]
@@ -199,6 +312,29 @@ impl AmoorW {
     #[inline]
     pub const fn rl(&self) -> u32 {
         (self.0 >> 25) & 0b1
+    }
+}
+impl std::fmt::Debug for AmoorW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("amoor.w"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .field(stringify!(aq), &self.aq())
+            .field(stringify!(rl), &self.rl())
+            .finish()
+    }
+}
+impl std::fmt::Display for AmoorW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "amoor.w")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        write!(f, " {:?}", self.aq())?;
+        write!(f, " {:?}", self.rl())?;
+        Ok(())
     }
 }
 pub struct AmoandW(pub u32);
@@ -233,6 +369,29 @@ impl AmoandW {
         (self.0 >> 25) & 0b1
     }
 }
+impl std::fmt::Debug for AmoandW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("amoand.w"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .field(stringify!(aq), &self.aq())
+            .field(stringify!(rl), &self.rl())
+            .finish()
+    }
+}
+impl std::fmt::Display for AmoandW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "amoand.w")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        write!(f, " {:?}", self.aq())?;
+        write!(f, " {:?}", self.rl())?;
+        Ok(())
+    }
+}
 pub struct AmominW(pub u32);
 impl AmominW {
     #[inline]
@@ -263,6 +422,29 @@ impl AmominW {
     #[inline]
     pub const fn rl(&self) -> u32 {
         (self.0 >> 25) & 0b1
+    }
+}
+impl std::fmt::Debug for AmominW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("amomin.w"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .field(stringify!(aq), &self.aq())
+            .field(stringify!(rl), &self.rl())
+            .finish()
+    }
+}
+impl std::fmt::Display for AmominW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "amomin.w")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        write!(f, " {:?}", self.aq())?;
+        write!(f, " {:?}", self.rl())?;
+        Ok(())
     }
 }
 pub struct AmomaxW(pub u32);
@@ -297,6 +479,29 @@ impl AmomaxW {
         (self.0 >> 25) & 0b1
     }
 }
+impl std::fmt::Debug for AmomaxW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("amomax.w"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .field(stringify!(aq), &self.aq())
+            .field(stringify!(rl), &self.rl())
+            .finish()
+    }
+}
+impl std::fmt::Display for AmomaxW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "amomax.w")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        write!(f, " {:?}", self.aq())?;
+        write!(f, " {:?}", self.rl())?;
+        Ok(())
+    }
+}
 pub struct AmominuW(pub u32);
 impl AmominuW {
     #[inline]
@@ -329,6 +534,29 @@ impl AmominuW {
         (self.0 >> 25) & 0b1
     }
 }
+impl std::fmt::Debug for AmominuW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("amominu.w"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .field(stringify!(aq), &self.aq())
+            .field(stringify!(rl), &self.rl())
+            .finish()
+    }
+}
+impl std::fmt::Display for AmominuW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "amominu.w")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        write!(f, " {:?}", self.aq())?;
+        write!(f, " {:?}", self.rl())?;
+        Ok(())
+    }
+}
 pub struct AmomaxuW(pub u32);
 impl AmomaxuW {
     #[inline]
@@ -359,5 +587,62 @@ impl AmomaxuW {
     #[inline]
     pub const fn rl(&self) -> u32 {
         (self.0 >> 25) & 0b1
+    }
+}
+impl std::fmt::Debug for AmomaxuW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("amomaxu.w"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .field(stringify!(aq), &self.aq())
+            .field(stringify!(rl), &self.rl())
+            .finish()
+    }
+}
+impl std::fmt::Display for AmomaxuW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "amomaxu.w")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        write!(f, " {:?}", self.aq())?;
+        write!(f, " {:?}", self.rl())?;
+        Ok(())
+    }
+}
+impl std::fmt::Debug for Rv32a {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rv32a::LrW(inst) => write!(f, "{inst:?}"),
+            Rv32a::ScW(inst) => write!(f, "{inst:?}"),
+            Rv32a::AmoswapW(inst) => write!(f, "{inst:?}"),
+            Rv32a::AmoaddW(inst) => write!(f, "{inst:?}"),
+            Rv32a::AmoxorW(inst) => write!(f, "{inst:?}"),
+            Rv32a::AmoorW(inst) => write!(f, "{inst:?}"),
+            Rv32a::AmoandW(inst) => write!(f, "{inst:?}"),
+            Rv32a::AmominW(inst) => write!(f, "{inst:?}"),
+            Rv32a::AmomaxW(inst) => write!(f, "{inst:?}"),
+            Rv32a::AmominuW(inst) => write!(f, "{inst:?}"),
+            Rv32a::AmomaxuW(inst) => write!(f, "{inst:?}"),
+        }
+    }
+}
+impl std::fmt::Display for Rv32a {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rv32a::LrW(inst) => write!(f, "{inst}"),
+            Rv32a::ScW(inst) => write!(f, "{inst}"),
+            Rv32a::AmoswapW(inst) => write!(f, "{inst}"),
+            Rv32a::AmoaddW(inst) => write!(f, "{inst}"),
+            Rv32a::AmoxorW(inst) => write!(f, "{inst}"),
+            Rv32a::AmoorW(inst) => write!(f, "{inst}"),
+            Rv32a::AmoandW(inst) => write!(f, "{inst}"),
+            Rv32a::AmominW(inst) => write!(f, "{inst}"),
+            Rv32a::AmomaxW(inst) => write!(f, "{inst}"),
+            Rv32a::AmominuW(inst) => write!(f, "{inst}"),
+            Rv32a::AmomaxuW(inst) => write!(f, "{inst}"),
+        }
     }
 }

@@ -49,7 +49,26 @@ impl Flw {
     }
     #[inline]
     pub const fn imm(&self) -> i32 {
-        ((((self.0 >> 20) & 0b111111111111) << 21) as i32) >> 21
+        ((((self.0 >> 20) & 0b111111111111) << 20) as i32) >> 20
+    }
+}
+impl std::fmt::Debug for Flw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("flw"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for Flw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "flw")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
     }
 }
 pub struct Fsw(pub u32);
@@ -70,9 +89,28 @@ impl Fsw {
     }
     #[inline]
     pub const fn imm(&self) -> i32 {
-        (((((self.0 >> 20) & 0b111111100000) | ((self.0 >> 7) & 0b11111)) << 21)
+        (((((self.0 >> 20) & 0b111111100000) | ((self.0 >> 7) & 0b11111)) << 20)
             as i32)
-            >> 21
+            >> 20
+    }
+}
+impl std::fmt::Debug for Fsw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fsw"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(frs2), &self.frs2())
+            .field(stringify!(imm), &self.imm())
+            .finish()
+    }
+}
+impl std::fmt::Display for Fsw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fsw")?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        write!(f, " {:?}", self.imm())?;
+        Ok(())
     }
 }
 pub struct FmaddS(pub u32);
@@ -110,6 +148,29 @@ impl FmaddS {
         (self.0 >> 12) & 0b111
     }
 }
+impl std::fmt::Debug for FmaddS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fmadd.s"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .field(stringify!(frs3), &self.frs3())
+            .field(stringify!(rm), &self.rm())
+            .finish()
+    }
+}
+impl std::fmt::Display for FmaddS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fmadd.s")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        write!(f, " {:?}", self.frs3())?;
+        write!(f, " {:?}", self.rm())?;
+        Ok(())
+    }
+}
 pub struct FmsubS(pub u32);
 impl FmsubS {
     #[inline]
@@ -143,6 +204,29 @@ impl FmsubS {
     #[inline]
     pub const fn rm(&self) -> u32 {
         (self.0 >> 12) & 0b111
+    }
+}
+impl std::fmt::Debug for FmsubS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fmsub.s"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .field(stringify!(frs3), &self.frs3())
+            .field(stringify!(rm), &self.rm())
+            .finish()
+    }
+}
+impl std::fmt::Display for FmsubS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fmsub.s")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        write!(f, " {:?}", self.frs3())?;
+        write!(f, " {:?}", self.rm())?;
+        Ok(())
     }
 }
 pub struct FnmsubS(pub u32);
@@ -180,6 +264,29 @@ impl FnmsubS {
         (self.0 >> 12) & 0b111
     }
 }
+impl std::fmt::Debug for FnmsubS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fnmsub.s"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .field(stringify!(frs3), &self.frs3())
+            .field(stringify!(rm), &self.rm())
+            .finish()
+    }
+}
+impl std::fmt::Display for FnmsubS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fnmsub.s")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        write!(f, " {:?}", self.frs3())?;
+        write!(f, " {:?}", self.rm())?;
+        Ok(())
+    }
+}
 pub struct FnmaddS(pub u32);
 impl FnmaddS {
     #[inline]
@@ -215,6 +322,29 @@ impl FnmaddS {
         (self.0 >> 12) & 0b111
     }
 }
+impl std::fmt::Debug for FnmaddS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fnmadd.s"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .field(stringify!(frs3), &self.frs3())
+            .field(stringify!(rm), &self.rm())
+            .finish()
+    }
+}
+impl std::fmt::Display for FnmaddS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fnmadd.s")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        write!(f, " {:?}", self.frs3())?;
+        write!(f, " {:?}", self.rm())?;
+        Ok(())
+    }
+}
 pub struct FaddS(pub u32);
 impl FaddS {
     #[inline]
@@ -241,6 +371,27 @@ impl FaddS {
     #[inline]
     pub const fn rm(&self) -> u32 {
         (self.0 >> 12) & 0b111
+    }
+}
+impl std::fmt::Debug for FaddS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fadd.s"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .field(stringify!(rm), &self.rm())
+            .finish()
+    }
+}
+impl std::fmt::Display for FaddS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fadd.s")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        write!(f, " {:?}", self.rm())?;
+        Ok(())
     }
 }
 pub struct FsubS(pub u32);
@@ -271,6 +422,27 @@ impl FsubS {
         (self.0 >> 12) & 0b111
     }
 }
+impl std::fmt::Debug for FsubS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fsub.s"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .field(stringify!(rm), &self.rm())
+            .finish()
+    }
+}
+impl std::fmt::Display for FsubS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fsub.s")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        write!(f, " {:?}", self.rm())?;
+        Ok(())
+    }
+}
 pub struct FmulS(pub u32);
 impl FmulS {
     #[inline]
@@ -297,6 +469,27 @@ impl FmulS {
     #[inline]
     pub const fn rm(&self) -> u32 {
         (self.0 >> 12) & 0b111
+    }
+}
+impl std::fmt::Debug for FmulS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fmul.s"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .field(stringify!(rm), &self.rm())
+            .finish()
+    }
+}
+impl std::fmt::Display for FmulS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fmul.s")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        write!(f, " {:?}", self.rm())?;
+        Ok(())
     }
 }
 pub struct FdivS(pub u32);
@@ -327,6 +520,27 @@ impl FdivS {
         (self.0 >> 12) & 0b111
     }
 }
+impl std::fmt::Debug for FdivS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fdiv.s"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .field(stringify!(rm), &self.rm())
+            .finish()
+    }
+}
+impl std::fmt::Display for FdivS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fdiv.s")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        write!(f, " {:?}", self.rm())?;
+        Ok(())
+    }
+}
 pub struct FsgnjS(pub u32);
 impl FsgnjS {
     #[inline]
@@ -349,6 +563,25 @@ impl FsgnjS {
             let acc = (self.0 >> 20) & 0b11111;
             unsafe { FReg::from_u5(acc as u8) }
         }
+    }
+}
+impl std::fmt::Debug for FsgnjS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fsgnj.s"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for FsgnjS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fsgnj.s")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        Ok(())
     }
 }
 pub struct FsgnjnS(pub u32);
@@ -375,6 +608,25 @@ impl FsgnjnS {
         }
     }
 }
+impl std::fmt::Debug for FsgnjnS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fsgnjn.s"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for FsgnjnS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fsgnjn.s")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        Ok(())
+    }
+}
 pub struct FsgnjxS(pub u32);
 impl FsgnjxS {
     #[inline]
@@ -397,6 +649,25 @@ impl FsgnjxS {
             let acc = (self.0 >> 20) & 0b11111;
             unsafe { FReg::from_u5(acc as u8) }
         }
+    }
+}
+impl std::fmt::Debug for FsgnjxS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fsgnjx.s"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for FsgnjxS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fsgnjx.s")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        Ok(())
     }
 }
 pub struct FminS(pub u32);
@@ -423,6 +694,25 @@ impl FminS {
         }
     }
 }
+impl std::fmt::Debug for FminS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fmin.s"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for FminS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fmin.s")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        Ok(())
+    }
+}
 pub struct FmaxS(pub u32);
 impl FmaxS {
     #[inline]
@@ -447,6 +737,25 @@ impl FmaxS {
         }
     }
 }
+impl std::fmt::Debug for FmaxS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fmax.s"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for FmaxS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fmax.s")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        Ok(())
+    }
+}
 pub struct FsqrtS(pub u32);
 impl FsqrtS {
     #[inline]
@@ -466,6 +775,25 @@ impl FsqrtS {
     #[inline]
     pub const fn rm(&self) -> u32 {
         (self.0 >> 12) & 0b111
+    }
+}
+impl std::fmt::Debug for FsqrtS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fsqrt.s"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(rm), &self.rm())
+            .finish()
+    }
+}
+impl std::fmt::Display for FsqrtS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fsqrt.s")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.rm())?;
+        Ok(())
     }
 }
 pub struct FleS(pub u32);
@@ -492,6 +820,25 @@ impl FleS {
         }
     }
 }
+impl std::fmt::Debug for FleS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fle.s"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for FleS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fle.s")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        Ok(())
+    }
+}
 pub struct FltS(pub u32);
 impl FltS {
     #[inline]
@@ -514,6 +861,25 @@ impl FltS {
             let acc = (self.0 >> 20) & 0b11111;
             unsafe { FReg::from_u5(acc as u8) }
         }
+    }
+}
+impl std::fmt::Debug for FltS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("flt.s"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for FltS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "flt.s")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        Ok(())
     }
 }
 pub struct FeqS(pub u32);
@@ -540,6 +906,25 @@ impl FeqS {
         }
     }
 }
+impl std::fmt::Debug for FeqS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("feq.s"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(frs2), &self.frs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for FeqS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "feq.s")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.frs2())?;
+        Ok(())
+    }
+}
 pub struct FcvtWS(pub u32);
 impl FcvtWS {
     #[inline]
@@ -559,6 +944,25 @@ impl FcvtWS {
     #[inline]
     pub const fn rm(&self) -> u32 {
         (self.0 >> 12) & 0b111
+    }
+}
+impl std::fmt::Debug for FcvtWS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fcvt.w.s"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(rm), &self.rm())
+            .finish()
+    }
+}
+impl std::fmt::Display for FcvtWS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fcvt.w.s")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.rm())?;
+        Ok(())
     }
 }
 pub struct FcvtWuS(pub u32);
@@ -582,6 +986,25 @@ impl FcvtWuS {
         (self.0 >> 12) & 0b111
     }
 }
+impl std::fmt::Debug for FcvtWuS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fcvt.wu.s"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(frs1), &self.frs1())
+            .field(stringify!(rm), &self.rm())
+            .finish()
+    }
+}
+impl std::fmt::Display for FcvtWuS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fcvt.wu.s")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.frs1())?;
+        write!(f, " {:?}", self.rm())?;
+        Ok(())
+    }
+}
 pub struct FcvtSW(pub u32);
 impl FcvtSW {
     #[inline]
@@ -601,6 +1024,25 @@ impl FcvtSW {
     #[inline]
     pub const fn rm(&self) -> u32 {
         (self.0 >> 12) & 0b111
+    }
+}
+impl std::fmt::Debug for FcvtSW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fcvt.s.w"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rm), &self.rm())
+            .finish()
+    }
+}
+impl std::fmt::Display for FcvtSW {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fcvt.s.w")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rm())?;
+        Ok(())
     }
 }
 pub struct FcvtSWu(pub u32);
@@ -624,6 +1066,25 @@ impl FcvtSWu {
         (self.0 >> 12) & 0b111
     }
 }
+impl std::fmt::Debug for FcvtSWu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fcvt.s.wu"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rm), &self.rm())
+            .finish()
+    }
+}
+impl std::fmt::Display for FcvtSWu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fcvt.s.wu")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rm())?;
+        Ok(())
+    }
+}
 pub struct FmvXS(pub u32);
 impl FmvXS {
     #[inline]
@@ -639,6 +1100,23 @@ impl FmvXS {
             let acc = (self.0 >> 15) & 0b11111;
             unsafe { FReg::from_u5(acc as u8) }
         }
+    }
+}
+impl std::fmt::Debug for FmvXS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fmv.x.s"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(frs1), &self.frs1())
+            .finish()
+    }
+}
+impl std::fmt::Display for FmvXS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fmv.x.s")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.frs1())?;
+        Ok(())
     }
 }
 pub struct FclassS(pub u32);
@@ -658,6 +1136,23 @@ impl FclassS {
         }
     }
 }
+impl std::fmt::Debug for FclassS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fclass.s"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(frs1), &self.frs1())
+            .finish()
+    }
+}
+impl std::fmt::Display for FclassS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fclass.s")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.frs1())?;
+        Ok(())
+    }
+}
 pub struct FmvSX(pub u32);
 impl FmvSX {
     #[inline]
@@ -672,6 +1167,87 @@ impl FmvSX {
         {
             let acc = (self.0 >> 15) & 0b11111;
             unsafe { Reg::from_u5(acc as u8) }
+        }
+    }
+}
+impl std::fmt::Debug for FmvSX {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("fmv.s.x"))
+            .field("inst", &self.0)
+            .field(stringify!(frd), &self.frd())
+            .field(stringify!(rs1), &self.rs1())
+            .finish()
+    }
+}
+impl std::fmt::Display for FmvSX {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fmv.s.x")?;
+        write!(f, " {:?}", self.frd())?;
+        write!(f, " {:?}", self.rs1())?;
+        Ok(())
+    }
+}
+impl std::fmt::Debug for Rv32f {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rv32f::Flw(inst) => write!(f, "{inst:?}"),
+            Rv32f::Fsw(inst) => write!(f, "{inst:?}"),
+            Rv32f::FmaddS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FmsubS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FnmsubS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FnmaddS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FaddS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FsubS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FmulS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FdivS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FsgnjS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FsgnjnS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FsgnjxS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FminS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FmaxS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FsqrtS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FleS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FltS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FeqS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FcvtWS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FcvtWuS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FcvtSW(inst) => write!(f, "{inst:?}"),
+            Rv32f::FcvtSWu(inst) => write!(f, "{inst:?}"),
+            Rv32f::FmvXS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FclassS(inst) => write!(f, "{inst:?}"),
+            Rv32f::FmvSX(inst) => write!(f, "{inst:?}"),
+        }
+    }
+}
+impl std::fmt::Display for Rv32f {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rv32f::Flw(inst) => write!(f, "{inst}"),
+            Rv32f::Fsw(inst) => write!(f, "{inst}"),
+            Rv32f::FmaddS(inst) => write!(f, "{inst}"),
+            Rv32f::FmsubS(inst) => write!(f, "{inst}"),
+            Rv32f::FnmsubS(inst) => write!(f, "{inst}"),
+            Rv32f::FnmaddS(inst) => write!(f, "{inst}"),
+            Rv32f::FaddS(inst) => write!(f, "{inst}"),
+            Rv32f::FsubS(inst) => write!(f, "{inst}"),
+            Rv32f::FmulS(inst) => write!(f, "{inst}"),
+            Rv32f::FdivS(inst) => write!(f, "{inst}"),
+            Rv32f::FsgnjS(inst) => write!(f, "{inst}"),
+            Rv32f::FsgnjnS(inst) => write!(f, "{inst}"),
+            Rv32f::FsgnjxS(inst) => write!(f, "{inst}"),
+            Rv32f::FminS(inst) => write!(f, "{inst}"),
+            Rv32f::FmaxS(inst) => write!(f, "{inst}"),
+            Rv32f::FsqrtS(inst) => write!(f, "{inst}"),
+            Rv32f::FleS(inst) => write!(f, "{inst}"),
+            Rv32f::FltS(inst) => write!(f, "{inst}"),
+            Rv32f::FeqS(inst) => write!(f, "{inst}"),
+            Rv32f::FcvtWS(inst) => write!(f, "{inst}"),
+            Rv32f::FcvtWuS(inst) => write!(f, "{inst}"),
+            Rv32f::FcvtSW(inst) => write!(f, "{inst}"),
+            Rv32f::FcvtSWu(inst) => write!(f, "{inst}"),
+            Rv32f::FmvXS(inst) => write!(f, "{inst}"),
+            Rv32f::FclassS(inst) => write!(f, "{inst}"),
+            Rv32f::FmvSX(inst) => write!(f, "{inst}"),
         }
     }
 }

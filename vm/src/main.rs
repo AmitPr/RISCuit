@@ -5,6 +5,7 @@ mod syscall;
 
 use cpu::Hart32;
 use elf::load_elf;
+use riscv_inst::Reg;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -18,10 +19,9 @@ fn main() {
     let elf = std::fs::read(elf_path).expect("Failed to read ELF file");
     let elf = load_elf(&mut cpu, &elf);
     cpu.pc = elf.entry as u32;
-    // TODO: we are setting stack pointer way too high
-    cpu.set_reg(2, u32::MAX);
-    // TODO: How do we set the brk correctly?
-    cpu.mem.brk = 0x8000000;
+    // TODO: what to set stack pointer to initially?
+    let sp = 0xc0000000u32 - 0x1000;
+    cpu.set_reg(Reg::Sp, sp);
 
     println!("Starting at 0x{:08x}", cpu.pc);
     cpu.run(elf);

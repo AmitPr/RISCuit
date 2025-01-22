@@ -120,7 +120,7 @@ impl Opcode {
 
     pub fn codegen_struct(
         &self,
-        accessors: &HashMap<String, TokenStream>,
+        accessors: &HashMap<String, (Ident, TokenStream)>,
         rv_c: bool,
     ) -> TokenStream {
         let opcode_ident = self.name_ident();
@@ -128,9 +128,12 @@ impl Opcode {
             .operands
             .iter()
             .map(|operand| {
-                accessors.get(operand).unwrap_or_else(|| {
-                    panic!("Failed to find accessor for operand '{}'", operand);
-                })
+                &accessors
+                    .get(operand)
+                    .unwrap_or_else(|| {
+                        panic!("Failed to find accessor for operand '{}'", operand);
+                    })
+                    .1
             })
             .collect::<Vec<_>>();
         let operand_inner_ty = if rv_c {
@@ -139,12 +142,49 @@ impl Opcode {
             quote! { pub u32 }
         };
 
+        let impls = {
+            let name = &self.name;
+            let operand_accessors = self
+                .operands
+                .iter()
+                .map(|operand| {
+                    &accessors
+                        .get(operand)
+                        .unwrap_or_else(|| {
+                            panic!("Failed to find accessor for operand '{}'", operand);
+                        })
+                        .0
+                })
+                .collect::<Vec<_>>();
+
+            quote! {
+                impl std::fmt::Debug for #opcode_ident {
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        f.debug_struct(stringify!(#name))
+                            .field("inst", &self.0)
+                            #( .field(stringify!(#operand_accessors), &self.#operand_accessors()) )*
+                            .finish()
+                    }
+                }
+
+                impl std::fmt::Display for #opcode_ident {
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(f, "{}", #name)?;
+                        #(write!(f, " {:?}", self.#operand_accessors())?;)*
+                        Ok(())
+                    }
+                }
+            }
+        };
+
         quote! {
             pub struct #opcode_ident(#operand_inner_ty);
 
             impl #opcode_ident {
                 #(#operand_accessors)*
             }
+
+            #impls
         }
     }
 

@@ -8,3 +8,4 @@ goblin = "0.9.3"
 libc = "0.2.169"
 rand = "0.8.5"
 riscv-inst.workspace = true
+syscalls = { version = "0.6.18", features = ["riscv32"] }

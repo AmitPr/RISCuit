@@ -23,18 +23,109 @@ pub enum Rv64s {
 }
 pub struct Ecall(pub u32);
 impl Ecall {}
+impl std::fmt::Debug for Ecall {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("ecall"))
+            .field("inst", &self.0)
+            .finish()
+    }
+}
+impl std::fmt::Display for Ecall {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ecall")?;
+        Ok(())
+    }
+}
 pub struct Ebreak(pub u32);
 impl Ebreak {}
+impl std::fmt::Debug for Ebreak {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("ebreak"))
+            .field("inst", &self.0)
+            .finish()
+    }
+}
+impl std::fmt::Display for Ebreak {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ebreak")?;
+        Ok(())
+    }
+}
 pub struct Uret(pub u32);
 impl Uret {}
+impl std::fmt::Debug for Uret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("uret"))
+            .field("inst", &self.0)
+            .finish()
+    }
+}
+impl std::fmt::Display for Uret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "uret")?;
+        Ok(())
+    }
+}
 pub struct Sret(pub u32);
 impl Sret {}
+impl std::fmt::Debug for Sret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("sret"))
+            .field("inst", &self.0)
+            .finish()
+    }
+}
+impl std::fmt::Display for Sret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "sret")?;
+        Ok(())
+    }
+}
 pub struct Hret(pub u32);
 impl Hret {}
+impl std::fmt::Debug for Hret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("hret"))
+            .field("inst", &self.0)
+            .finish()
+    }
+}
+impl std::fmt::Display for Hret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "hret")?;
+        Ok(())
+    }
+}
 pub struct Mret(pub u32);
 impl Mret {}
+impl std::fmt::Debug for Mret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("mret"))
+            .field("inst", &self.0)
+            .finish()
+    }
+}
+impl std::fmt::Display for Mret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "mret")?;
+        Ok(())
+    }
+}
 pub struct Dret(pub u32);
 impl Dret {}
+impl std::fmt::Debug for Dret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("dret"))
+            .field("inst", &self.0)
+            .finish()
+    }
+}
+impl std::fmt::Display for Dret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "dret")?;
+        Ok(())
+    }
+}
 pub struct SfenceVm(pub u32);
 impl SfenceVm {
     #[inline]
@@ -43,6 +134,21 @@ impl SfenceVm {
             let acc = (self.0 >> 15) & 0b11111;
             unsafe { Reg::from_u5(acc as u8) }
         }
+    }
+}
+impl std::fmt::Debug for SfenceVm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("sfence.vm"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1), &self.rs1())
+            .finish()
+    }
+}
+impl std::fmt::Display for SfenceVm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "sfence.vm")?;
+        write!(f, " {:?}", self.rs1())?;
+        Ok(())
     }
 }
 pub struct SfenceVma(pub u32);
@@ -62,8 +168,38 @@ impl SfenceVma {
         }
     }
 }
+impl std::fmt::Debug for SfenceVma {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("sfence.vma"))
+            .field("inst", &self.0)
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for SfenceVma {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "sfence.vma")?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
+    }
+}
 pub struct Wfi(pub u32);
 impl Wfi {}
+impl std::fmt::Debug for Wfi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("wfi"))
+            .field("inst", &self.0)
+            .finish()
+    }
+}
+impl std::fmt::Display for Wfi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "wfi")?;
+        Ok(())
+    }
+}
 pub struct Csrrw(pub u32);
 impl Csrrw {
     #[inline]
@@ -83,6 +219,25 @@ impl Csrrw {
     #[inline]
     pub const fn csr12(&self) -> u32 {
         (self.0 >> 20) & 0b111111111111
+    }
+}
+impl std::fmt::Debug for Csrrw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("csrrw"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(csr12), &self.csr12())
+            .finish()
+    }
+}
+impl std::fmt::Display for Csrrw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "csrrw")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.csr12())?;
+        Ok(())
     }
 }
 pub struct Csrrs(pub u32);
@@ -106,6 +261,25 @@ impl Csrrs {
         (self.0 >> 20) & 0b111111111111
     }
 }
+impl std::fmt::Debug for Csrrs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("csrrs"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(csr12), &self.csr12())
+            .finish()
+    }
+}
+impl std::fmt::Display for Csrrs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "csrrs")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.csr12())?;
+        Ok(())
+    }
+}
 pub struct Csrrc(pub u32);
 impl Csrrc {
     #[inline]
@@ -127,6 +301,25 @@ impl Csrrc {
         (self.0 >> 20) & 0b111111111111
     }
 }
+impl std::fmt::Debug for Csrrc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("csrrc"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(csr12), &self.csr12())
+            .finish()
+    }
+}
+impl std::fmt::Display for Csrrc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "csrrc")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.csr12())?;
+        Ok(())
+    }
+}
 pub struct Csrrwi(pub u32);
 impl Csrrwi {
     #[inline]
@@ -143,6 +336,25 @@ impl Csrrwi {
     #[inline]
     pub const fn csr12(&self) -> u32 {
         (self.0 >> 20) & 0b111111111111
+    }
+}
+impl std::fmt::Debug for Csrrwi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("csrrwi"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(imm), &self.imm())
+            .field(stringify!(csr12), &self.csr12())
+            .finish()
+    }
+}
+impl std::fmt::Display for Csrrwi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "csrrwi")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.imm())?;
+        write!(f, " {:?}", self.csr12())?;
+        Ok(())
     }
 }
 pub struct Csrrsi(pub u32);
@@ -163,6 +375,25 @@ impl Csrrsi {
         (self.0 >> 20) & 0b111111111111
     }
 }
+impl std::fmt::Debug for Csrrsi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("csrrsi"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(imm), &self.imm())
+            .field(stringify!(csr12), &self.csr12())
+            .finish()
+    }
+}
+impl std::fmt::Display for Csrrsi {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "csrrsi")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.imm())?;
+        write!(f, " {:?}", self.csr12())?;
+        Ok(())
+    }
+}
 pub struct Csrrci(pub u32);
 impl Csrrci {
     #[inline]
@@ -179,5 +410,68 @@ impl Csrrci {
     #[inline]
     pub const fn csr12(&self) -> u32 {
         (self.0 >> 20) & 0b111111111111
+    }
+}
+impl std::fmt::Debug for Csrrci {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("csrrci"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(imm), &self.imm())
+            .field(stringify!(csr12), &self.csr12())
+            .finish()
+    }
+}
+impl std::fmt::Display for Csrrci {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "csrrci")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.imm())?;
+        write!(f, " {:?}", self.csr12())?;
+        Ok(())
+    }
+}
+impl std::fmt::Debug for Rv64s {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rv64s::Ecall(inst) => write!(f, "{inst:?}"),
+            Rv64s::Ebreak(inst) => write!(f, "{inst:?}"),
+            Rv64s::Uret(inst) => write!(f, "{inst:?}"),
+            Rv64s::Sret(inst) => write!(f, "{inst:?}"),
+            Rv64s::Hret(inst) => write!(f, "{inst:?}"),
+            Rv64s::Mret(inst) => write!(f, "{inst:?}"),
+            Rv64s::Dret(inst) => write!(f, "{inst:?}"),
+            Rv64s::SfenceVm(inst) => write!(f, "{inst:?}"),
+            Rv64s::SfenceVma(inst) => write!(f, "{inst:?}"),
+            Rv64s::Wfi(inst) => write!(f, "{inst:?}"),
+            Rv64s::Csrrw(inst) => write!(f, "{inst:?}"),
+            Rv64s::Csrrs(inst) => write!(f, "{inst:?}"),
+            Rv64s::Csrrc(inst) => write!(f, "{inst:?}"),
+            Rv64s::Csrrwi(inst) => write!(f, "{inst:?}"),
+            Rv64s::Csrrsi(inst) => write!(f, "{inst:?}"),
+            Rv64s::Csrrci(inst) => write!(f, "{inst:?}"),
+        }
+    }
+}
+impl std::fmt::Display for Rv64s {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rv64s::Ecall(inst) => write!(f, "{inst}"),
+            Rv64s::Ebreak(inst) => write!(f, "{inst}"),
+            Rv64s::Uret(inst) => write!(f, "{inst}"),
+            Rv64s::Sret(inst) => write!(f, "{inst}"),
+            Rv64s::Hret(inst) => write!(f, "{inst}"),
+            Rv64s::Mret(inst) => write!(f, "{inst}"),
+            Rv64s::Dret(inst) => write!(f, "{inst}"),
+            Rv64s::SfenceVm(inst) => write!(f, "{inst}"),
+            Rv64s::SfenceVma(inst) => write!(f, "{inst}"),
+            Rv64s::Wfi(inst) => write!(f, "{inst}"),
+            Rv64s::Csrrw(inst) => write!(f, "{inst}"),
+            Rv64s::Csrrs(inst) => write!(f, "{inst}"),
+            Rv64s::Csrrc(inst) => write!(f, "{inst}"),
+            Rv64s::Csrrwi(inst) => write!(f, "{inst}"),
+            Rv64s::Csrrsi(inst) => write!(f, "{inst}"),
+            Rv64s::Csrrci(inst) => write!(f, "{inst}"),
+        }
     }
 }

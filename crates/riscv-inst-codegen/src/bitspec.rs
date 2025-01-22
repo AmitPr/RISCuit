@@ -142,14 +142,14 @@ pub fn serialize_bitspecs(src: TokenStream, out_ty: TokenStream, bitspecs: &str)
 
     match out_ty.to_string().as_str() {
         "i32" => {
-            let shamt = 32 - hsb.unwrap_or(0);
+            let shamt = 31 - hsb.unwrap_or(0);
             let shamt = LitInt::new(&format!("{}", shamt), proc_macro2::Span::call_site());
             quote! {
                 (((#accessor) << #shamt) as i32) >> #shamt
             }
         }
         "i64" => {
-            let shamt = 64 - hsb.unwrap_or(0);
+            let shamt = 63 - hsb.unwrap_or(0);
             quote! {
                 (((#accessor) << #shamt) as i64) >> #shamt
             }

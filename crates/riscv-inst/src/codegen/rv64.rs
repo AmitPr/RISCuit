@@ -5,19 +5,21 @@ pub use super::rv64a::*;
 pub use super::rv64c::*;
 pub use super::rv64d::*;
 pub use super::rv64f::*;
+pub use super::rv64fc::*;
 pub use super::rv64i::*;
 pub use super::rv64m::*;
 pub use super::rv64q::*;
 pub use super::rv64s::*;
 pub enum Rv64 {
-    Rv64s(Rv64s),
+    Rv64f(Rv64f),
+    Rv64i(Rv64i),
     Rv64d(Rv64d),
     Rv64q(Rv64q),
+    Rv64s(Rv64s),
     Rv64c(Rv64c),
-    Rv64i(Rv64i),
-    Rv64f(Rv64f),
     Rv64a(Rv64a),
     Rv64m(Rv64m),
+    Rv64fc(Rv64fc),
 }
 impl Rv64 {
     #[inline(always)]
@@ -25,10 +27,10 @@ impl Rv64 {
         match inst & 0b11 {
             0b0 => match (inst >> 13usize) & 0b111 {
                 0b0 => Some(Rv64::Rv64c(Rv64c::CAddi4spn(CAddi4spn(inst as _)))),
-                0b1 => Some(Rv64::Rv64c(Rv64c::CFld(CFld(inst as _)))),
+                0b1 => Some(Rv64::Rv64fc(Rv64fc::CFld(CFld(inst as _)))),
                 0b10 => Some(Rv64::Rv64c(Rv64c::CLw(CLw(inst as _)))),
                 0b11 => Some(Rv64::Rv64c(Rv64c::CLd(CLd(inst as _)))),
-                0b101 => Some(Rv64::Rv64c(Rv64c::CFsd(CFsd(inst as _)))),
+                0b101 => Some(Rv64::Rv64fc(Rv64fc::CFsd(CFsd(inst as _)))),
                 0b110 => Some(Rv64::Rv64c(Rv64c::CSw(CSw(inst as _)))),
                 0b111 => Some(Rv64::Rv64c(Rv64c::CSd(CSd(inst as _)))),
                 _ => None,
@@ -75,7 +77,7 @@ impl Rv64 {
             },
             0b10 => match (inst >> 13usize) & 0b111 {
                 0b0 => Some(Rv64::Rv64c(Rv64c::CSlli(CSlli(inst as _)))),
-                0b1 => Some(Rv64::Rv64c(Rv64c::CFldsp(CFldsp(inst as _)))),
+                0b1 => Some(Rv64::Rv64fc(Rv64fc::CFldsp(CFldsp(inst as _)))),
                 0b10 => Some(Rv64::Rv64c(Rv64c::CLwsp(CLwsp(inst as _)))),
                 0b11 => Some(Rv64::Rv64c(Rv64c::CLdsp(CLdsp(inst as _)))),
                 0b100 => match (inst >> 12usize) & 0b1 {
@@ -94,7 +96,7 @@ impl Rv64 {
                     0b1 => Some(Rv64::Rv64c(Rv64c::CAdd(CAdd(inst as _)))),
                     _ => None,
                 },
-                0b101 => Some(Rv64::Rv64c(Rv64c::CFsdsp(CFsdsp(inst as _)))),
+                0b101 => Some(Rv64::Rv64fc(Rv64fc::CFsdsp(CFsdsp(inst as _)))),
                 0b110 => Some(Rv64::Rv64c(Rv64c::CSwsp(CSwsp(inst as _)))),
                 0b111 => Some(Rv64::Rv64c(Rv64c::CSdsp(CSdsp(inst as _)))),
                 _ => None,
@@ -536,6 +538,81 @@ impl Rv64 {
                 _ => None,
             },
             _ => None,
+        }
+    }
+}
+impl From<Rv64f> for Rv64 {
+    fn from(inst: Rv64f) -> Self {
+        Rv64::Rv64f(inst)
+    }
+}
+impl From<Rv64i> for Rv64 {
+    fn from(inst: Rv64i) -> Self {
+        Rv64::Rv64i(inst)
+    }
+}
+impl From<Rv64d> for Rv64 {
+    fn from(inst: Rv64d) -> Self {
+        Rv64::Rv64d(inst)
+    }
+}
+impl From<Rv64q> for Rv64 {
+    fn from(inst: Rv64q) -> Self {
+        Rv64::Rv64q(inst)
+    }
+}
+impl From<Rv64s> for Rv64 {
+    fn from(inst: Rv64s) -> Self {
+        Rv64::Rv64s(inst)
+    }
+}
+impl From<Rv64c> for Rv64 {
+    fn from(inst: Rv64c) -> Self {
+        Rv64::Rv64c(inst)
+    }
+}
+impl From<Rv64a> for Rv64 {
+    fn from(inst: Rv64a) -> Self {
+        Rv64::Rv64a(inst)
+    }
+}
+impl From<Rv64m> for Rv64 {
+    fn from(inst: Rv64m) -> Self {
+        Rv64::Rv64m(inst)
+    }
+}
+impl From<Rv64fc> for Rv64 {
+    fn from(inst: Rv64fc) -> Self {
+        Rv64::Rv64fc(inst)
+    }
+}
+impl std::fmt::Debug for Rv64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rv64::Rv64f(inst) => write!(f, "{inst:?}"),
+            Rv64::Rv64i(inst) => write!(f, "{inst:?}"),
+            Rv64::Rv64d(inst) => write!(f, "{inst:?}"),
+            Rv64::Rv64q(inst) => write!(f, "{inst:?}"),
+            Rv64::Rv64s(inst) => write!(f, "{inst:?}"),
+            Rv64::Rv64c(inst) => write!(f, "{inst:?}"),
+            Rv64::Rv64a(inst) => write!(f, "{inst:?}"),
+            Rv64::Rv64m(inst) => write!(f, "{inst:?}"),
+            Rv64::Rv64fc(inst) => write!(f, "{inst:?}"),
+        }
+    }
+}
+impl std::fmt::Display for Rv64 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rv64::Rv64f(inst) => write!(f, "{inst}"),
+            Rv64::Rv64i(inst) => write!(f, "{inst}"),
+            Rv64::Rv64d(inst) => write!(f, "{inst}"),
+            Rv64::Rv64q(inst) => write!(f, "{inst}"),
+            Rv64::Rv64s(inst) => write!(f, "{inst}"),
+            Rv64::Rv64c(inst) => write!(f, "{inst}"),
+            Rv64::Rv64a(inst) => write!(f, "{inst}"),
+            Rv64::Rv64m(inst) => write!(f, "{inst}"),
+            Rv64::Rv64fc(inst) => write!(f, "{inst}"),
         }
     }
 }

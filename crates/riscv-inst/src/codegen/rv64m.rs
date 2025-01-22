@@ -42,6 +42,25 @@ impl Mul {
         }
     }
 }
+impl std::fmt::Debug for Mul {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("mul"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for Mul {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "mul")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
+    }
+}
 pub struct Mulh(pub u32);
 impl Mulh {
     #[inline]
@@ -64,6 +83,25 @@ impl Mulh {
             let acc = (self.0 >> 20) & 0b11111;
             unsafe { Reg::from_u5(acc as u8) }
         }
+    }
+}
+impl std::fmt::Debug for Mulh {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("mulh"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for Mulh {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "mulh")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
     }
 }
 pub struct Mulhsu(pub u32);
@@ -90,6 +128,25 @@ impl Mulhsu {
         }
     }
 }
+impl std::fmt::Debug for Mulhsu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("mulhsu"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for Mulhsu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "mulhsu")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
+    }
+}
 pub struct Mulhu(pub u32);
 impl Mulhu {
     #[inline]
@@ -112,6 +169,25 @@ impl Mulhu {
             let acc = (self.0 >> 20) & 0b11111;
             unsafe { Reg::from_u5(acc as u8) }
         }
+    }
+}
+impl std::fmt::Debug for Mulhu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("mulhu"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for Mulhu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "mulhu")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
     }
 }
 pub struct Div(pub u32);
@@ -138,6 +214,25 @@ impl Div {
         }
     }
 }
+impl std::fmt::Debug for Div {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("div"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for Div {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "div")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
+    }
+}
 pub struct Divu(pub u32);
 impl Divu {
     #[inline]
@@ -160,6 +255,25 @@ impl Divu {
             let acc = (self.0 >> 20) & 0b11111;
             unsafe { Reg::from_u5(acc as u8) }
         }
+    }
+}
+impl std::fmt::Debug for Divu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("divu"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for Divu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "divu")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
     }
 }
 pub struct Rem(pub u32);
@@ -186,6 +300,25 @@ impl Rem {
         }
     }
 }
+impl std::fmt::Debug for Rem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("rem"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for Rem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "rem")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
+    }
+}
 pub struct Remu(pub u32);
 impl Remu {
     #[inline]
@@ -208,6 +341,25 @@ impl Remu {
             let acc = (self.0 >> 20) & 0b11111;
             unsafe { Reg::from_u5(acc as u8) }
         }
+    }
+}
+impl std::fmt::Debug for Remu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("remu"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for Remu {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "remu")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
     }
 }
 pub struct Mulw(pub u32);
@@ -234,6 +386,25 @@ impl Mulw {
         }
     }
 }
+impl std::fmt::Debug for Mulw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("mulw"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for Mulw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "mulw")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
+    }
+}
 pub struct Divw(pub u32);
 impl Divw {
     #[inline]
@@ -256,6 +427,25 @@ impl Divw {
             let acc = (self.0 >> 20) & 0b11111;
             unsafe { Reg::from_u5(acc as u8) }
         }
+    }
+}
+impl std::fmt::Debug for Divw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("divw"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for Divw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "divw")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
     }
 }
 pub struct Divuw(pub u32);
@@ -282,6 +472,25 @@ impl Divuw {
         }
     }
 }
+impl std::fmt::Debug for Divuw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("divuw"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for Divuw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "divuw")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
+    }
+}
 pub struct Remw(pub u32);
 impl Remw {
     #[inline]
@@ -306,6 +515,25 @@ impl Remw {
         }
     }
 }
+impl std::fmt::Debug for Remw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("remw"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for Remw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "remw")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
+    }
+}
 pub struct Remuw(pub u32);
 impl Remuw {
     #[inline]
@@ -327,6 +555,63 @@ impl Remuw {
         {
             let acc = (self.0 >> 20) & 0b11111;
             unsafe { Reg::from_u5(acc as u8) }
+        }
+    }
+}
+impl std::fmt::Debug for Remuw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!("remuw"))
+            .field("inst", &self.0)
+            .field(stringify!(rd), &self.rd())
+            .field(stringify!(rs1), &self.rs1())
+            .field(stringify!(rs2), &self.rs2())
+            .finish()
+    }
+}
+impl std::fmt::Display for Remuw {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "remuw")?;
+        write!(f, " {:?}", self.rd())?;
+        write!(f, " {:?}", self.rs1())?;
+        write!(f, " {:?}", self.rs2())?;
+        Ok(())
+    }
+}
+impl std::fmt::Debug for Rv64m {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rv64m::Mul(inst) => write!(f, "{inst:?}"),
+            Rv64m::Mulh(inst) => write!(f, "{inst:?}"),
+            Rv64m::Mulhsu(inst) => write!(f, "{inst:?}"),
+            Rv64m::Mulhu(inst) => write!(f, "{inst:?}"),
+            Rv64m::Div(inst) => write!(f, "{inst:?}"),
+            Rv64m::Divu(inst) => write!(f, "{inst:?}"),
+            Rv64m::Rem(inst) => write!(f, "{inst:?}"),
+            Rv64m::Remu(inst) => write!(f, "{inst:?}"),
+            Rv64m::Mulw(inst) => write!(f, "{inst:?}"),
+            Rv64m::Divw(inst) => write!(f, "{inst:?}"),
+            Rv64m::Divuw(inst) => write!(f, "{inst:?}"),
+            Rv64m::Remw(inst) => write!(f, "{inst:?}"),
+            Rv64m::Remuw(inst) => write!(f, "{inst:?}"),
+        }
+    }
+}
+impl std::fmt::Display for Rv64m {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rv64m::Mul(inst) => write!(f, "{inst}"),
+            Rv64m::Mulh(inst) => write!(f, "{inst}"),
+            Rv64m::Mulhsu(inst) => write!(f, "{inst}"),
+            Rv64m::Mulhu(inst) => write!(f, "{inst}"),
+            Rv64m::Div(inst) => write!(f, "{inst}"),
+            Rv64m::Divu(inst) => write!(f, "{inst}"),
+            Rv64m::Rem(inst) => write!(f, "{inst}"),
+            Rv64m::Remu(inst) => write!(f, "{inst}"),
+            Rv64m::Mulw(inst) => write!(f, "{inst}"),
+            Rv64m::Divw(inst) => write!(f, "{inst}"),
+            Rv64m::Divuw(inst) => write!(f, "{inst}"),
+            Rv64m::Remw(inst) => write!(f, "{inst}"),
+            Rv64m::Remuw(inst) => write!(f, "{inst}"),
         }
     }
 }

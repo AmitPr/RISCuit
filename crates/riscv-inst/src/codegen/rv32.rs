@@ -5,19 +5,21 @@ pub use super::rv32a::*;
 pub use super::rv32c::*;
 pub use super::rv32d::*;
 pub use super::rv32f::*;
+pub use super::rv32fc::*;
 pub use super::rv32i::*;
 pub use super::rv32m::*;
 pub use super::rv32q::*;
 pub use super::rv32s::*;
 pub enum Rv32 {
+    Rv32fc(Rv32fc),
     Rv32q(Rv32q),
-    Rv32i(Rv32i),
-    Rv32d(Rv32d),
-    Rv32m(Rv32m),
     Rv32s(Rv32s),
-    Rv32a(Rv32a),
     Rv32f(Rv32f),
     Rv32c(Rv32c),
+    Rv32d(Rv32d),
+    Rv32i(Rv32i),
+    Rv32m(Rv32m),
+    Rv32a(Rv32a),
 }
 impl Rv32 {
     #[inline(always)]
@@ -25,12 +27,12 @@ impl Rv32 {
         match inst & 0b11 {
             0b0 => match (inst >> 13usize) & 0b111 {
                 0b0 => Some(Rv32::Rv32c(Rv32c::CAddi4spn(CAddi4spn(inst as _)))),
-                0b1 => Some(Rv32::Rv32c(Rv32c::CFld(CFld(inst as _)))),
+                0b1 => Some(Rv32::Rv32fc(Rv32fc::CFld(CFld(inst as _)))),
                 0b10 => Some(Rv32::Rv32c(Rv32c::CLw(CLw(inst as _)))),
-                0b11 => Some(Rv32::Rv32c(Rv32c::CFlw(CFlw(inst as _)))),
-                0b101 => Some(Rv32::Rv32c(Rv32c::CFsd(CFsd(inst as _)))),
+                0b11 => Some(Rv32::Rv32fc(Rv32fc::CFlw(CFlw(inst as _)))),
+                0b101 => Some(Rv32::Rv32fc(Rv32fc::CFsd(CFsd(inst as _)))),
                 0b110 => Some(Rv32::Rv32c(Rv32c::CSw(CSw(inst as _)))),
-                0b111 => Some(Rv32::Rv32c(Rv32c::CFsw(CFsw(inst as _)))),
+                0b111 => Some(Rv32::Rv32fc(Rv32fc::CFsw(CFsw(inst as _)))),
                 _ => None,
             },
             0b1 => match (inst >> 13usize) & 0b111 {
@@ -52,16 +54,8 @@ impl Rv32 {
                     0b1 => Some(Rv32::Rv32c(Rv32c::CSrai(CSrai(inst as _)))),
                     0b10 => Some(Rv32::Rv32c(Rv32c::CAndi(CAndi(inst as _)))),
                     0b11 => match (inst >> 5usize) & 0b11 {
-                        0b0 => match (inst >> 12usize) & 0b1 {
-                            0b0 => Some(Rv32::Rv32c(Rv32c::CSub(CSub(inst as _)))),
-                            0b1 => Some(Rv32::Rv32c(Rv32c::CSubw(CSubw(inst as _)))),
-                            _ => None,
-                        },
-                        0b1 => match (inst >> 12usize) & 0b1 {
-                            0b0 => Some(Rv32::Rv32c(Rv32c::CXor(CXor(inst as _)))),
-                            0b1 => Some(Rv32::Rv32c(Rv32c::CAddw(CAddw(inst as _)))),
-                            _ => None,
-                        },
+                        0b0 => Some(Rv32::Rv32c(Rv32c::CSub(CSub(inst as _)))),
+                        0b1 => Some(Rv32::Rv32c(Rv32c::CXor(CXor(inst as _)))),
                         0b10 => Some(Rv32::Rv32c(Rv32c::COr(COr(inst as _)))),
                         0b11 => Some(Rv32::Rv32c(Rv32c::CAnd(CAnd(inst as _)))),
                         _ => None,
@@ -75,9 +69,9 @@ impl Rv32 {
             },
             0b10 => match (inst >> 13usize) & 0b111 {
                 0b0 => Some(Rv32::Rv32c(Rv32c::CSlli(CSlli(inst as _)))),
-                0b1 => Some(Rv32::Rv32c(Rv32c::CFldsp(CFldsp(inst as _)))),
+                0b1 => Some(Rv32::Rv32fc(Rv32fc::CFldsp(CFldsp(inst as _)))),
                 0b10 => Some(Rv32::Rv32c(Rv32c::CLwsp(CLwsp(inst as _)))),
-                0b11 => Some(Rv32::Rv32c(Rv32c::CFlwsp(CFlwsp(inst as _)))),
+                0b11 => Some(Rv32::Rv32fc(Rv32fc::CFlwsp(CFlwsp(inst as _)))),
                 0b100 => match (inst >> 12usize) & 0b1 {
                     0b0 if ((inst >> 2usize) & 0b11111) == 0 => {
                         Some(Rv32::Rv32c(Rv32c::CJr(CJr(inst as _))))
@@ -94,9 +88,9 @@ impl Rv32 {
                     0b1 => Some(Rv32::Rv32c(Rv32c::CAdd(CAdd(inst as _)))),
                     _ => None,
                 },
-                0b101 => Some(Rv32::Rv32c(Rv32c::CFsdsp(CFsdsp(inst as _)))),
+                0b101 => Some(Rv32::Rv32fc(Rv32fc::CFsdsp(CFsdsp(inst as _)))),
                 0b110 => Some(Rv32::Rv32c(Rv32c::CSwsp(CSwsp(inst as _)))),
-                0b111 => Some(Rv32::Rv32c(Rv32c::CFswsp(CFswsp(inst as _)))),
+                0b111 => Some(Rv32::Rv32fc(Rv32fc::CFswsp(CFswsp(inst as _)))),
                 _ => None,
             },
             0b11 => match (inst >> 2usize) & 0b11111 {
@@ -434,6 +428,81 @@ impl Rv32 {
                 _ => None,
             },
             _ => None,
+        }
+    }
+}
+impl From<Rv32fc> for Rv32 {
+    fn from(inst: Rv32fc) -> Self {
+        Rv32::Rv32fc(inst)
+    }
+}
+impl From<Rv32q> for Rv32 {
+    fn from(inst: Rv32q) -> Self {
+        Rv32::Rv32q(inst)
+    }
+}
+impl From<Rv32s> for Rv32 {
+    fn from(inst: Rv32s) -> Self {
+        Rv32::Rv32s(inst)
+    }
+}
+impl From<Rv32f> for Rv32 {
+    fn from(inst: Rv32f) -> Self {
+        Rv32::Rv32f(inst)
+    }
+}
+impl From<Rv32c> for Rv32 {
+    fn from(inst: Rv32c) -> Self {
+        Rv32::Rv32c(inst)
+    }
+}
+impl From<Rv32d> for Rv32 {
+    fn from(inst: Rv32d) -> Self {
+        Rv32::Rv32d(inst)
+    }
+}
+impl From<Rv32i> for Rv32 {
+    fn from(inst: Rv32i) -> Self {
+        Rv32::Rv32i(inst)
+    }
+}
+impl From<Rv32m> for Rv32 {
+    fn from(inst: Rv32m) -> Self {
+        Rv32::Rv32m(inst)
+    }
+}
+impl From<Rv32a> for Rv32 {
+    fn from(inst: Rv32a) -> Self {
+        Rv32::Rv32a(inst)
+    }
+}
+impl std::fmt::Debug for Rv32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rv32::Rv32fc(inst) => write!(f, "{inst:?}"),
+            Rv32::Rv32q(inst) => write!(f, "{inst:?}"),
+            Rv32::Rv32s(inst) => write!(f, "{inst:?}"),
+            Rv32::Rv32f(inst) => write!(f, "{inst:?}"),
+            Rv32::Rv32c(inst) => write!(f, "{inst:?}"),
+            Rv32::Rv32d(inst) => write!(f, "{inst:?}"),
+            Rv32::Rv32i(inst) => write!(f, "{inst:?}"),
+            Rv32::Rv32m(inst) => write!(f, "{inst:?}"),
+            Rv32::Rv32a(inst) => write!(f, "{inst:?}"),
+        }
+    }
+}
+impl std::fmt::Display for Rv32 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Rv32::Rv32fc(inst) => write!(f, "{inst}"),
+            Rv32::Rv32q(inst) => write!(f, "{inst}"),
+            Rv32::Rv32s(inst) => write!(f, "{inst}"),
+            Rv32::Rv32f(inst) => write!(f, "{inst}"),
+            Rv32::Rv32c(inst) => write!(f, "{inst}"),
+            Rv32::Rv32d(inst) => write!(f, "{inst}"),
+            Rv32::Rv32i(inst) => write!(f, "{inst}"),
+            Rv32::Rv32m(inst) => write!(f, "{inst}"),
+            Rv32::Rv32a(inst) => write!(f, "{inst}"),
         }
     }
 }
