@@ -1,10 +1,7 @@
-mod bitspec;
-mod r#match;
-mod opcode;
-
 use std::{collections::HashMap, io::Write, path::Path};
 
-use opcode::Opcode;
+use riscv_inst_codegen::{generate_opcode_parser, isa_ident, serialize_bitspecs, Opcode};
+
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::Ident;
@@ -144,7 +141,7 @@ fn codegen_base_isas(isas: Vec<String>) -> Vec<(String, String)> {
             .into_iter()
             .filter(|opcode| opcode.isas.iter().any(|isa| isa.contains(base)))
             .collect::<Vec<_>>();
-        let decode_fn = r#match::generate_opcode_parser(filtered, base.to_string());
+        let decode_fn = generate_opcode_parser(filtered, base.to_string());
 
         let base_ident = isa_ident(base);
         let variants = relevant_isas.clone().map(|isa| {
@@ -242,7 +239,7 @@ fn generate_operand_accessor_fn(operand: &[String]) -> TokenStream {
     } else {
         operand_type.clone()
     };
-    let accessor = bitspec::serialize_bitspecs(quote! { (self.0 as u32) }, spec_ty, &operand[1]);
+    let accessor = serialize_bitspecs(quote! { (self.0 as u32) }, spec_ty, &operand[1]);
 
     // TODO: Sign extension
     quote! {
@@ -263,18 +260,6 @@ fn group_by_isa(opcodes: Vec<Opcode>) -> HashMap<String, Vec<Opcode>> {
     }
 
     isas
-}
-
-pub(crate) fn isa_ident(isa: &str) -> Ident {
-    // capitalize first letter
-    let isa = isa
-        .chars()
-        .next()
-        .unwrap()
-        .to_uppercase()
-        .chain(isa.chars().skip(1))
-        .collect::<String>();
-    Ident::new(&isa, proc_macro2::Span::call_site())
 }
 
 fn generate_isa_enum(

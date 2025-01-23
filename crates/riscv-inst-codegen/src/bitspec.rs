@@ -52,6 +52,7 @@ impl Parse for Bitspec {
             let scatter = Punctuated::<BitRange, token::Or>::parse_separated_nonempty(&content)?;
             scatter.into_iter().collect::<Vec<_>>()
         } else {
+            // Scatter into right-justified bits
             vec![BitRange {
                 msb: gather.msb - gather.lsb,
                 lsb: 0,

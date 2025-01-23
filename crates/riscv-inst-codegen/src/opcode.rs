@@ -2,11 +2,12 @@ use std::collections::HashMap;
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Ident, LitInt};
+use syn::Ident;
 
 use crate::isa_ident;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
+/// Parses M..L=Val
 pub struct BitEnc {
     pub start: usize,
     pub end: usize,
@@ -39,12 +40,7 @@ impl BitEnc {
     }
 
     pub fn codegen_extract(&self, src: Ident) -> TokenStream {
-        let width = self.end - self.start + 1;
-        let mask: u64 = (1 << (self.end - self.start + 1)) - 1;
-        let mask = LitInt::new(
-            &format!("{:#0width$b}", mask),
-            proc_macro2::Span::call_site(),
-        );
+        let mask = crate::mask(self.end - self.start + 1, 0);
         let shift = self.start;
 
         if shift == 0 {
