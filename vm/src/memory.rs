@@ -83,6 +83,7 @@ impl Drop for Memory {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct GuestPtr<T: ?Sized> {
     /// Pointer to the base of the guest memory.
     base: *const u8,

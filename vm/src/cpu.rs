@@ -3,26 +3,31 @@ use riscv_inst::{
     Reg,
 };
 
-use crate::memory::Memory;
+use crate::memory::{GuestPtr, Memory};
 
 /// A simple CPU for RV32I instructions
 pub struct Hart32 {
     regs: [u32; 32],
+    csrs: [u32; 4096],
     pub pc: u32,
+    pub inst_count: u64,
     pub mem: Memory,
     pub running: bool,
     /// Atomic memory reservation set on this hart
-    pub amo_rsv: u32,
+    /// In the form (Addr, Value)
+    pub amo_rsv: Option<(GuestPtr<u8>, u32)>,
 }
 
 impl Hart32 {
     pub fn new() -> Self {
         Hart32 {
             regs: [0; 32],
+            csrs: [0; 4096],
             pc: 0,
+            inst_count: 0,
             mem: Memory::new(),
             running: true,
-            amo_rsv: 0,
+            amo_rsv: None,
         }
     }
 
@@ -46,7 +51,7 @@ impl Hart32 {
     /// Execute one instruction
     #[allow(unused)]
     pub fn run(&mut self, elf: goblin::elf::Elf<'_>) {
-        let syms_by_pc: std::collections::HashMap<u32, &str> = elf
+        let syms_by_pc: std::collections::BTreeMap<u32, &str> = elf
             .syms
             .iter()
             .filter_map(|sym| {
@@ -59,28 +64,32 @@ impl Hart32 {
                 }
             })
             .collect();
+        let mut last_sym = None;
         let mut debug = false;
         while self.running {
-            if let Some(sym) = syms_by_pc.get(&self.pc) {
-                println!("0x{:08x}: {}", self.pc, sym);
-                // wait for stdin
-                let mut input = String::new();
-                std::io::stdin().read_line(&mut input).unwrap();
-                match input.trim() {
-                    "q" => {
-                        self.running = false;
-                        break;
-                    }
-                    "d" => {
-                        debug = !debug;
-                        if debug {
-                            println!("Register states:");
+            // Get the sym closest to pc but before it:
+            if let Some((pc, sym)) = syms_by_pc.range(..=self.pc).next_back() {
+                if last_sym != Some(*sym) {
+                    // println!("0x{:08x}: {}", pc, sym);
+                    last_sym = Some(*sym);
+
+                    // wait for stdin
+                    let mut input = String::new();
+                    // std::io::stdin().read_line(&mut input).unwrap();
+                    match input.trim() {
+                        "q" => {
+                            self.running = false;
+                        }
+                        "d" => {
+                            debug = !debug;
+                        }
+                        "r" => {
                             for (i, reg) in self.regs.iter().enumerate() {
-                                println!("x{:02}: 0x{:08x}", i, reg);
+                                println!("{:?}: 0x{:08x}", unsafe { Reg::from_u5(i as u8) }, reg);
                             }
                         }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
 
@@ -90,14 +99,9 @@ impl Hart32 {
             });
             let inc = if matches!(op, Rv32::Rv32c(_)) { 2 } else { 4 };
 
-            // let (op, inc) = riscv_inst::lookup::decode(inst);
-            // let op = op.unwrap_or_else(|| {
-            //     panic!("Invalid instruction at 0x{:08x}: {:08x}", self.pc, inst)
-            // });
-
             let mut next_pc = self.pc.wrapping_add(inc);
             if debug {
-                println!("0x{:08x}:\t{inst:08x}\t{op}\n", self.pc,);
+                println!("0x{:08x}:\t{inst:08x}\t{op}", self.pc);
             }
 
             macro_rules! reg {
@@ -300,7 +304,11 @@ impl Hart32 {
                     Rv32s::SfenceVm(sfence_vm) => todo!(),
                     Rv32s::SfenceVma(sfence_vma) => todo!(),
                     Rv32s::Wfi(wfi) => todo!(),
-                    Rv32s::Csrrw(csrrw) => todo!(),
+                    Rv32s::Csrrw(csrrw) => {
+                        let csr = csrrw.csr12() as usize;
+                        reg!(csrrw.rd(), self.csrs[csr]);
+                        self.csrs[csr] = reg!(csrrw.rs1());
+                    }
                     Rv32s::Csrrs(csrrs) => todo!(),
                     Rv32s::Csrrc(csrrc) => todo!(),
                     Rv32s::Csrrwi(csrrwi) => todo!(),
@@ -314,16 +322,20 @@ impl Hart32 {
                         if addr & 3 != 0 {
                             panic!("Load at {addr:#08x} is not aligned to 4 bytes");
                         }
-                        self.amo_rsv = addr;
-                        reg!(lr_w.rd(), self.mem.load::<u32>(addr));
+                        let val = self.mem.load::<u32>(addr);
+                        // TODO: Not sure if this is how the spec defines the
+                        // "reservation set" for lr/sc
+                        self.amo_rsv = Some((self.mem.pointer(addr), val));
+                        reg!(lr_w.rd(), val);
                     }
                     Rv32a::ScW(sc_w) => {
                         let addr = reg!(sc_w.rs1());
                         if addr & 3 != 0 {
                             panic!("Store at {addr:#08x} is not aligned to 4 bytes");
                         }
-                        if self.amo_rsv == addr {
-                            self.mem.store::<u32>(addr, reg!(sc_w.rs2()));
+                        let val = reg!(sc_w.rs2());
+                        if self.amo_rsv == Some((self.mem.pointer(addr), val)) {
+                            self.mem.store::<u32>(addr, val);
                             reg!(sc_w.rd(), 1);
                         } else {
                             reg!(sc_w.rd(), 0);
@@ -455,8 +467,11 @@ impl Hart32 {
                 _ => panic!("Unsupported instruction: {:?}", op),
             }
 
+            self.inst_count += 1;
             self.pc = next_pc;
         }
+
+        println!("Instructions executed: {}", self.inst_count);
     }
 
     pub fn syscall(&mut self) {

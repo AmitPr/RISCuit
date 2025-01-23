@@ -5,5 +5,4 @@ resolver = "2"
 
 [workspace.dependencies]
 riscv-inst = { path = "crates/riscv-inst" }
-riscv-inst-macros = { path = "crates/riscv-inst-macros" }
-riscv-c-tables = { path = "crates/riscv-c-tables" }
+libc-riscv32 = { path = "crates/libc-riscv32" }

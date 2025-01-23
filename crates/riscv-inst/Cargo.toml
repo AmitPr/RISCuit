@@ -9,4 +9,3 @@ m = []
 c = []
 
 [dependencies]
-riscv-inst-macros.workspace = true

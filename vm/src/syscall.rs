@@ -25,21 +25,43 @@ pub fn riscv_hwprobe(
 }
 
 pub fn brk(hart: &mut Hart32, ptr: GuestPtr<u8>) -> u32 {
-    if ptr.addr() > hart.mem.brk {
-        hart.mem.brk = ptr.addr();
+    let cur_brk = hart.mem.brk;
+    let new_brk = ptr.addr();
+
+    // Query current break
+    if new_brk == 0 {
+        return cur_brk;
     }
 
-    hart.mem.brk
+    // Validate new break point
+    // if new_brk < hart.mem.data_start {
+    //     return cur_brk;  // Cannot set below data segment
+    // }
+
+    // Align to page size (typically 4KB)
+    let aligned_brk = (new_brk + 0xFFF) & !0xFFF;
+
+    // Zero new memory on increase
+    if aligned_brk > cur_brk {
+        for i in cur_brk..aligned_brk {
+            hart.mem.store::<u8>(i, 0);
+        }
+    }
+
+    hart.mem.brk = aligned_brk;
+    aligned_brk
 }
 
 pub fn gettid(_hart: &mut Hart32) -> u32 {
-    // We don't implement this syscall.
-    0x123
+    // There's only one thread, so just return 1
+    0x01
 }
 
-pub fn set_tid_address(hart: &mut Hart32, _tidptr: GuestPtr<u32>) -> u32 {
-    // We don't implement this syscall.
-    gettid(hart)
+pub fn set_tid_address(hart: &mut Hart32, tidptr: GuestPtr<u32>) -> u32 {
+    let tid = gettid(hart);
+    tidptr.store(tid);
+
+    tid
 }
 
 pub fn getpid(_hart: &mut Hart32) -> u32 {
@@ -156,28 +178,56 @@ pub fn exit_group(hart: &mut Hart32, status: i32) -> u32 {
 
 pub fn mmap(
     hart: &mut Hart32,
-    _addr: u32,
+    addr: u32,
     len: u32,
-    prot: i32,
-    flags: i32,
-    _fd: i32,
+    prot: u32,
+    flags: u32,
+    fd: i32,
     _offset: u32,
 ) -> i32 {
-    // ensure only MAP_ANONYMOUS calls are made
-    if flags & libc::MAP_ANONYMOUS == 0 {
-        return -libc::EINVAL;
+    if flags & !(libc_riscv32::MAP_PRIVATE | libc_riscv32::MAP_ANON | libc_riscv32::MAP_FIXED) != 0
+    {
+        println!("mmap: Invalid flags: {:#x}", flags);
+        return -libc_riscv32::EINVAL;
     }
 
-    // ensure only PROT_READ and PROT_WRITE are set
-    if prot & !(libc::PROT_READ | libc::PROT_WRITE) != 0 {
-        return -libc::EINVAL;
+    if flags & libc_riscv32::MAP_ANONYMOUS == 0 && fd < 0 {
+        return -libc_riscv32::EBADF;
     }
 
-    // just give it some memory from the Memory
-    let ptr = hart.mem.brk;
-    hart.mem.brk += len;
+    if prot & !(libc_riscv32::PROT_READ | libc_riscv32::PROT_WRITE | libc_riscv32::PROT_EXEC) != 0 {
+        return -libc_riscv32::EINVAL;
+    }
 
-    ptr as i32
+    let aligned_len = (len + 0xFFF) & !0xFFF;
+    if aligned_len < len {
+        return -libc_riscv32::ENOMEM;
+    }
+
+    // align
+    let map_addr = if addr != 0 {
+        if addr & 0xFFF != 0 {
+            return -libc_riscv32::EINVAL;
+        }
+        addr
+    } else {
+        // addr = 0 is use free region
+        (hart.mem.brk + 0xFFF) & !0xFFF
+    };
+
+    if map_addr.checked_add(aligned_len).is_none() {
+        return -libc_riscv32::ENOMEM;
+    }
+
+    for i in map_addr..map_addr + aligned_len {
+        hart.mem.store::<u8>(i, 0);
+    }
+
+    if map_addr + aligned_len > hart.mem.brk {
+        hart.mem.brk = map_addr + aligned_len;
+    }
+
+    map_addr as i32
 }
 
 #[allow(unused)]
@@ -199,11 +249,11 @@ pub fn futex(
             if uaddr.read() == val {
                 0
             } else {
-                -libc::EAGAIN
+                -libc_riscv32::EAGAIN
             }
         }
         1 => 1,
-        _ => -libc::ENOSYS,
+        _ => -libc_riscv32::ENOSYS,
     }
 }
 
@@ -231,7 +281,7 @@ pub fn rt_sigaction(
     _oldact: GuestPtr<u8>,
     _sigsetsize: u32,
 ) -> i32 {
-    // stubbed out
+    // stubbed out -- this is called w/ SIGPIPE during rust runtime startup
     0
 }
 
