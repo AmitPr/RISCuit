@@ -1,11 +1,4 @@
-mod cpu;
-mod elf;
-mod memory;
-mod syscall;
-
-use cpu::Hart32;
-use elf::load_elf;
-use riscv_inst::Reg;
+use derisc::{cpu::Hart32, elf::load_elf, riscv_inst::Reg};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -24,5 +17,5 @@ fn main() {
     cpu.set_reg(Reg::Sp, sp);
 
     println!("Starting at 0x{:08x}", cpu.pc);
-    cpu.run(elf);
+    cpu.run(elf).expect("Failed to run program");
 }

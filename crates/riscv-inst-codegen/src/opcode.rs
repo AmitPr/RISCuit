@@ -174,6 +174,7 @@ impl Opcode {
         };
 
         quote! {
+            #[derive(Clone, Copy, PartialEq, Eq)]
             pub struct #opcode_ident(#operand_inner_ty);
 
             impl #opcode_ident {

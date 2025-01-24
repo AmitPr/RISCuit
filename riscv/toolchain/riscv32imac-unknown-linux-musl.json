@@ -7,11 +7,12 @@
     "std": true
   },
   "target-pointer-width": "32",
+  "max-atomic-width": 32,
   "data-layout": "e-m:e-p:32:32-i64:64-n32-S128",
   "eh-frame-header": false,
   "emit-debug-gdb-scripts": false,
   "singlethread": true,
-  "features": "+m,+a,+c,+crt-static",
+  "features": "+m,+a,+c",
   "pre-link-args": {
     "gnu-cc": [
       "-march=rv32imac",
@@ -23,6 +24,7 @@
   "dynamic-linking": false,
   "crt-static-default": true,
   "crt-static-respected": true,
+  "position-independent-executables": false,
   "llvm-target": "riscv32-unknown-linux-musl",
   "llvm-abiname": "ilp32",
   "panic-strategy": "abort",
@@ -32,5 +34,6 @@
   "env": "musl",
   "target-family": [
     "unix"
-  ]
+  ],
+  "tls-model": "local-exec"
 }

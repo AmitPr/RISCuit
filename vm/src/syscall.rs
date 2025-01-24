@@ -75,7 +75,7 @@ pub fn set_robust_list(_hart: &mut Hart32, _head: GuestPtr<u8>, _len: u32) -> u3
 }
 
 #[repr(C)]
-pub(crate) struct RLimit {
+pub struct RLimit {
     rlim_cur: u64,
     rlim_max: u64,
 }
@@ -147,7 +147,7 @@ pub fn write(_hart: &mut Hart32, fd: i32, buf: GuestPtr<[u8]>, count: u32) -> i3
 }
 
 #[repr(C)]
-pub(crate) struct Iovec {
+pub struct Iovec {
     iov_base: *const u8,
     iov_len: u32,
 }
@@ -168,6 +168,7 @@ pub fn writev(_hart: &mut Hart32, fd: i32, iov: GuestPtr<[Iovec]>, iovcnt: i32) 
 pub fn exit(hart: &mut Hart32, status: i32) -> u32 {
     println!("Program exited with status {}", status);
     hart.running = false;
+    hart.exit_code = status;
 
     status as u32
 }
@@ -185,6 +186,11 @@ pub fn mmap(
     fd: i32,
     _offset: u32,
 ) -> i32 {
+    println!(
+        "mmap: addr={:#x} len={:#x} prot={:#x} flags={:#x} fd={} offset={:#x}",
+        addr, len, prot, flags, fd, _offset
+    );
+
     if flags & !(libc_riscv32::MAP_PRIVATE | libc_riscv32::MAP_ANON | libc_riscv32::MAP_FIXED) != 0
     {
         println!("mmap: Invalid flags: {:#x}", flags);
@@ -196,6 +202,10 @@ pub fn mmap(
     }
 
     if prot & !(libc_riscv32::PROT_READ | libc_riscv32::PROT_WRITE | libc_riscv32::PROT_EXEC) != 0 {
+        return -libc_riscv32::EINVAL;
+    }
+
+    if addr % 0xFFF != 0 {
         return -libc_riscv32::EINVAL;
     }
 
@@ -219,8 +229,10 @@ pub fn mmap(
         return -libc_riscv32::ENOMEM;
     }
 
-    for i in map_addr..map_addr + aligned_len {
-        hart.mem.store::<u8>(i, 0);
+    if flags & libc_riscv32::MAP_ANONYMOUS != 0 {
+        for i in map_addr..map_addr + aligned_len {
+            hart.mem.store::<u8>(i, 0);
+        }
     }
 
     if map_addr + aligned_len > hart.mem.brk {

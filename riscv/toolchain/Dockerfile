@@ -46,13 +46,13 @@ RUN rustup component add rust-src --toolchain nightly-aarch64-unknown-linux-gnu
 WORKDIR /opt/rust/
 COPY riscv32imac-unknown-linux-musl.json /opt/rust/
 
-# patch missing libunwind by using libgcc
-# RUN ln -s /build/buildroot-2024.11.1/output/host/lib/gcc/riscv32-buildroot-linux-musl/13.3.0/libgcc.a /build/buildroot-2024.11.1/output/host/lib/gcc/riscv32-buildroot-linux-musl/13.3.0/libunwind.a
+# Ignore missing libunwind by creating a dummy file
 RUN touch /build/buildroot-2024.11.1/output/host/riscv32-buildroot-linux-musl/sysroot/usr/lib/libunwind.a
+# RUN ln -s /build/buildroot-2024.11.1/output/host/lib/gcc/riscv32-buildroot-linux-musl/13.3.0/libgcc.a /build/buildroot-2024.11.1/output/host/lib/gcc/riscv32-buildroot-linux-musl/13.3.0/libunwind.a
 
 # Build the project
 WORKDIR /code
-ENTRYPOINT CARGO_PROFILE_RELEASE_PANIC="abort" cargo +nightly build --release \
+ENTRYPOINT cargo +nightly build --release \
     -Z build-std=core,alloc,std,panic_abort \
     -Z build-std-features=panic_immediate_abort,optimize_for_size \
     --target /opt/rust/riscv32imac-unknown-linux-musl.json \

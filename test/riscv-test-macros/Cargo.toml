@@ -1,0 +1,13 @@
+[package]
+name = "riscv-test-macros"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+quote = "1.0"
+syn = "2.0"
+proc-macro2 = "1.0"
+prettyplease = "0.2"
+
+[lib]
+proc-macro = true

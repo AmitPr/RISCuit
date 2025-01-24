@@ -6,9 +6,10 @@ mod _sealed {
     }
     impl_primitive!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize);
 }
+use _sealed::Primitive;
+
 use std::{ffi::CStr, marker::PhantomData};
 
-use _sealed::Primitive;
 use goblin::pe::import::Bitfield;
 
 pub const PAGE_SIZE: usize = 4096;
@@ -57,7 +58,7 @@ impl Memory {
 
     pub fn store<T: Primitive>(&mut self, addr: u32, val: T) {
         unsafe {
-            *(self.ptr.add(addr as usize) as *mut T) = val;
+            (self.ptr.add(addr as usize) as *mut T).write_unaligned(val);
         }
     }
 
@@ -72,6 +73,12 @@ impl Memory {
             .ok()?;
 
         Some(GuestPtr::new(self.ptr, offset))
+    }
+}
+
+impl Default for Memory {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

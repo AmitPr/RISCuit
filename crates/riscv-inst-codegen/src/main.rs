@@ -197,6 +197,7 @@ fn codegen_base_isas(isas: Vec<String>) -> Vec<(String, String)> {
         let gen = syn::parse_quote! {
             #( #imports )*
 
+            #[derive(Clone, Copy, PartialEq, Eq)]
             pub enum #base_ident {
                 #(#variants)*
             }
@@ -300,6 +301,7 @@ fn generate_isa_enum(
     };
 
     quote! {
+        #[derive(Clone, Copy, PartialEq, Eq)]
         pub enum #isa_ident {
             #(#variants(#variants)),*
         }
