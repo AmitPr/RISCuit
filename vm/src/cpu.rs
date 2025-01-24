@@ -250,6 +250,11 @@ impl Hart32 {
                     Rv32i::And(and) => reg_reg_op!(|and.rs1, and.rs2| rs1 & rs2),
                     Rv32i::Fence(fence) => {}
                     Rv32i::FenceI(fence_i) => {}
+                    Rv32i::Ecall(ecall) => self.syscall(),
+                    Rv32i::Ebreak(ebreak) => {}
+                    Rv32i::Unimp(_) => {
+                        return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
+                    }
                 },
                 Rv32::Rv32m(m) => match m {
                     Rv32m::Mul(mul) => reg_reg_op!(|mul.rs1, mul.rs2| rs1.wrapping_mul(rs2)),
@@ -316,8 +321,6 @@ impl Hart32 {
                     ),
                 },
                 Rv32::Rv32s(s) => match s {
-                    Rv32s::Ecall(ecall) => self.syscall(),
-                    Rv32s::Ebreak(ebreak) => {}
                     Rv32s::Uret(uret) => {
                         return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
                     }
@@ -524,6 +527,9 @@ impl Hart32 {
                     Rv32c::CAdd(cadd) => {
                         let rs1rd = cadd.rs1rd();
                         reg!(rs1rd, reg!(rs1rd).wrapping_add(reg!(cadd.rs2())));
+                    }
+                    Rv32c::CUnimp(_) => {
+                        return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
                     }
                 },
                 _ => {
