@@ -5,7 +5,6 @@ use thiserror::Error;
 pub enum MemoryAccess {
     Load,
     Store,
-    Swap,
 }
 
 #[derive(Error, Debug)]

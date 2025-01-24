@@ -18,8 +18,7 @@ pub struct Hart32 {
     pub running: bool,
     pub exit_code: i32,
     /// Atomic memory reservation set on this hart
-    /// In the form (Addr, Value)
-    pub amo_rsv: Option<(GuestPtr<u8>, u32)>,
+    pub amo_rsv: Option<GuestPtr<u8>>,
 }
 
 impl Hart32 {
@@ -181,6 +180,23 @@ impl Hart32 {
                 }};
             }
 
+            macro_rules! amo_op {
+                (|$inst:ident, $old:ident, $rs2:ident| $body:expr) => {{
+                    let addr = reg!($inst.rs1());
+                    if addr & 3 != 0 {
+                        return Err(VmError::UnalignedMemoryAccess {
+                            access: MemoryAccess::Load,
+                            addr,
+                            required: 4,
+                        });
+                    }
+                    let $old = self.mem.load::<u32>(addr);
+                    reg!($inst.rd(), $old);
+                    let $rs2 = reg!($inst.rs2());
+                    self.mem.store::<u32>(addr, $body as u32);
+                }};
+            }
+
             match op {
                 Rv32::Rv32i(i) => match i {
                     Rv32i::Lui(lui) => imm_op!(|lui.imm| imm),
@@ -253,13 +269,13 @@ impl Hart32 {
                     Rv32i::Ecall(ecall) => self.syscall(),
                     Rv32i::Ebreak(ebreak) => {}
                     Rv32i::Unimp(_) => {
-                        return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
+                        return Err(VmError::IllegalInstruction { addr: self.pc, op })
                     }
                 },
                 Rv32::Rv32m(m) => match m {
                     Rv32m::Mul(mul) => reg_reg_op!(|mul.rs1, mul.rs2| rs1.wrapping_mul(rs2)),
                     Rv32m::Mulh(mulh) => reg_reg_op!(
-                        |mulh.rs1, mulh.rs2| ((rs1 as i64 * rs2 as i64) >> 32) as u32
+                        |mulh.rs1, mulh.rs2| ((rs1 as i32 as i64).wrapping_mul(rs2 as i32 as i64) as u64) >> 32
                     ),
                     Rv32m::Mulhsu(mulhsu) => reg_reg_op!(
                         |mulhsu.rs1, mulhsu.rs2| (((rs1 as i32 as i64) * (rs2 as i64)) >> 32) as u32
@@ -363,11 +379,10 @@ impl Hart32 {
                                 required: 4,
                             });
                         }
-                        let val = self.mem.load::<u32>(addr);
                         // TODO: Not sure if this is how the spec defines the
                         // "reservation set" for lr/sc
-                        self.amo_rsv = Some((self.mem.pointer(addr), val));
-                        reg!(lr_w.rd(), val);
+                        self.amo_rsv = Some(self.mem.pointer(addr));
+                        reg!(lr_w.rd(), self.mem.load::<u32>(addr));
                     }
                     Rv32a::ScW(sc_w) => {
                         let addr = reg!(sc_w.rs1());
@@ -378,52 +393,23 @@ impl Hart32 {
                                 required: 4,
                             });
                         }
-                        let val = reg!(sc_w.rs2());
-                        if self.amo_rsv == Some((self.mem.pointer(addr), val)) {
-                            self.mem.store::<u32>(addr, val);
-                            reg!(sc_w.rd(), 1);
-                        } else {
+                        if self.amo_rsv == Some(self.mem.pointer(addr)) {
+                            self.mem.store::<u32>(addr, reg!(sc_w.rs2()));
                             reg!(sc_w.rd(), 0);
+                        } else {
+                            reg!(sc_w.rd(), 1);
                         }
+                        self.amo_rsv = None;
                     }
-                    Rv32a::AmoswapW(amoswap_w) => {
-                        // tmp = mem[rs1]; mem[rs1] = rs2; rd = tmp
-                        let addr = reg!(amoswap_w.rs1());
-                        if addr & 3 != 0 {
-                            return Err(VmError::UnalignedMemoryAccess {
-                                access: MemoryAccess::Swap,
-                                addr,
-                                required: 4,
-                            });
-                        }
-                        let old = self.mem.load::<u32>(addr);
-                        reg!(amoswap_w.rd(), old);
-                        self.mem.store::<u32>(addr, reg!(amoswap_w.rs2()));
-                    }
-                    Rv32a::AmoaddW(amoadd_w) => {
-                        return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
-                    }
-                    Rv32a::AmoxorW(amoxor_w) => {
-                        return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
-                    }
-                    Rv32a::AmoorW(amoor_w) => {
-                        return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
-                    }
-                    Rv32a::AmoandW(amoand_w) => {
-                        return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
-                    }
-                    Rv32a::AmominW(amomin_w) => {
-                        return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
-                    }
-                    Rv32a::AmomaxW(amomax_w) => {
-                        return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
-                    }
-                    Rv32a::AmominuW(amominu_w) => {
-                        return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
-                    }
-                    Rv32a::AmomaxuW(amomaxu_w) => {
-                        return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
-                    }
+                    Rv32a::AmoswapW(swap) => amo_op!(|swap, old, rs2| rs2),
+                    Rv32a::AmoaddW(add) => amo_op!(|add, old, rs2| old.wrapping_add(rs2)),
+                    Rv32a::AmoxorW(xor) => amo_op!(|xor, old, rs2| old ^ rs2),
+                    Rv32a::AmoorW(or) => amo_op!(|or, old, rs2| old | rs2),
+                    Rv32a::AmoandW(and) => amo_op!(|and, old, rs2| old & rs2),
+                    Rv32a::AmominW(min) => amo_op!(|min, old, rs2| (old as i32).min(rs2 as i32)),
+                    Rv32a::AmomaxW(max) => amo_op!(|max, old, rs2| (old as i32).max(rs2 as i32)),
+                    Rv32a::AmominuW(minu) => amo_op!(|minu, old, rs2| old.min(rs2)),
+                    Rv32a::AmomaxuW(maxu) => amo_op!(|maxu, old, rs2| old.max(rs2)),
                 },
                 Rv32::Rv32c(c) => match c {
                     Rv32c::CAddi4spn(addi4spn) => {
@@ -529,7 +515,7 @@ impl Hart32 {
                         reg!(rs1rd, reg!(rs1rd).wrapping_add(reg!(cadd.rs2())));
                     }
                     Rv32c::CUnimp(_) => {
-                        return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
+                        return Err(VmError::IllegalInstruction { addr: self.pc, op })
                     }
                 },
                 _ => {

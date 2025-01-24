@@ -4,12 +4,10 @@ use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::Ident;
 
-#[proc_macro]
-/// Create one test for each input file in the artifacts directory.
-pub fn generate_tests(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let test_artifacts_dir =
-        Path::new(env!("CARGO_WORKSPACE_DIR")).join("./riscv/test-env/artifacts");
+const WORKSPACE_ROOT: &str = env!("CARGO_WORKSPACE_DIR");
 
+fn main() {
+    let test_artifacts_dir = Path::new(WORKSPACE_ROOT).join("./riscv/test-env/artifacts");
     let mut artifacts = test_artifacts_dir.read_dir().unwrap();
 
     let mut tests = Vec::new();
@@ -18,27 +16,28 @@ pub fn generate_tests(_input: proc_macro::TokenStream) -> proc_macro::TokenStrea
         if !path.is_file() || path.extension() == Some("dump".as_ref()) {
             continue;
         }
-        if !path
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .starts_with("rv32")
-        {
-            continue;
+
+        let test_name = path.file_name().unwrap().to_str().unwrap();
+        match test_name {
+            s if s.starts_with("rv32ua-p") => {}
+            s if s.starts_with("rv32uc-p") => {}
+            s if s.starts_with("rv32ui-p") => {}
+            s if s.starts_with("rv32um-p") => {}
+            _ => continue,
         }
 
         tests.push(generate_test_for_artifact(&path));
     }
-    let output = quote! {
-        #[cfg(test)]
-        mod tests {
-            use derisc::{cpu::Hart32, elf::load_elf, riscv_inst::Reg};
+    let output = syn::parse_quote! {
+        #![cfg(test)]
+        use derisc::{cpu::Hart32, elf::load_elf, riscv_inst::Reg};
 
-            #(#tests)*
-        }
+        #(#tests)*
     };
-    output.into()
+
+    let output_file = Path::new(WORKSPACE_ROOT).join("test/riscv-tests/src/isa_tests.rs");
+
+    std::fs::write(output_file, prettyplease::unparse(&output)).unwrap();
 }
 
 fn generate_test_for_artifact(artifact: &Path) -> TokenStream {
@@ -50,12 +49,13 @@ fn generate_test_for_artifact(artifact: &Path) -> TokenStream {
         .replace("-", "_");
     let test_name = Ident::new(&test_name, Span::call_site());
 
-    let program_bytes = std::fs::read(artifact).expect("Failed to read test artifact");
+    let program_file = artifact.to_str().unwrap();
 
     quote! {
         #[test]
         fn #test_name() {
-            let program = &[#(#program_bytes),*];
+            let program = include_bytes!(#program_file);
+
             let mut cpu = Hart32::new();
             let elf = load_elf(&mut cpu, program);
             cpu.pc = elf.entry as u32;

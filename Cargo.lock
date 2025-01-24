@@ -153,7 +153,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "riscv-test-macros"
+name = "riscv-test-codegen"
 version = "0.1.0"
 dependencies = [
  "prettyplease",
@@ -167,7 +167,6 @@ name = "riscv-tests"
 version = "0.1.0"
 dependencies = [
  "derisc",
- "riscv-test-macros",
 ]
 
 [[package]]
