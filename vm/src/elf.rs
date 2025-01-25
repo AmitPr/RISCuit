@@ -134,6 +134,7 @@ pub fn load_elf<'a>(cpu: &mut Hart32, bytes: &'a [u8]) -> goblin::elf::Elf<'a> {
     // Align and set brk
     brk = (brk + 0xfff) & !0xfff;
     cpu.mem.brk = brk;
+    println!("Loaded ELF at {:08x}, brk={:08x}", elf.entry, brk);
 
     elf
 }

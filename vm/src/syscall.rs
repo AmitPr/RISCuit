@@ -24,32 +24,31 @@ pub fn riscv_hwprobe(
     -1
 }
 
-pub fn brk(hart: &mut Hart32, ptr: GuestPtr<u8>) -> u32 {
-    let cur_brk = hart.mem.brk;
-    let new_brk = ptr.addr();
+pub fn brk(hart: &mut Hart32, addr: GuestPtr<u8>) -> u32 {
+    let old_brk = hart.mem.brk;
+    let new_brk = addr.addr();
+    println!("brk: new_brk={:#x} cur_brk={old_brk:#x}", addr.addr());
 
-    // Query current break
+    // brk(0) is used to query the current break
     if new_brk == 0 {
-        return cur_brk;
+        return old_brk;
     }
 
-    // Validate new break point
-    // if new_brk < hart.mem.data_start {
-    //     return cur_brk;  // Cannot set below data segment
-    // }
-
-    // Align to page size (typically 4KB)
-    let aligned_brk = (new_brk + 0xFFF) & !0xFFF;
-
-    // Zero new memory on increase
-    if aligned_brk > cur_brk {
-        for i in cur_brk..aligned_brk {
-            hart.mem.store::<u8>(i, 0);
-        }
+    hart.mem.brk = new_brk;
+    if new_brk < old_brk {
+        // Zero old memory
+        let decrement = (old_brk - new_brk) as usize;
+        let region = hart.mem.pointer::<u8>(new_brk).as_host_ptr_mut();
+        unsafe { std::ptr::write_bytes(region, 0, decrement) };
+    } else {
+        // Zero new memory
+        let increment = (new_brk - old_brk) as usize;
+        let region = hart.mem.pointer::<u8>(old_brk).as_host_ptr_mut();
+        unsafe { std::ptr::write_bytes(region, 0, increment) };
     }
 
-    hart.mem.brk = aligned_brk;
-    aligned_brk
+    // brk() returns 0 on success, but looks like muslc expects the new break?
+    new_brk
 }
 
 pub fn gettid(_hart: &mut Hart32) -> u32 {
@@ -214,32 +213,30 @@ pub fn mmap(
         return -libc_riscv32::ENOMEM;
     }
 
-    // align
-    let map_addr = if addr != 0 {
-        if addr & 0xFFF != 0 {
-            return -libc_riscv32::EINVAL;
+    if addr == 0 {
+        // We can choose any address, just treat it like a `brk`
+        if hart.mem.brk.checked_add(aligned_len).is_none() {
+            return -libc_riscv32::ENOMEM;
         }
-        addr
+        let new_brk = hart.mem.brk + aligned_len;
+        brk(hart, hart.mem.pointer::<u8>(new_brk)) as i32
     } else {
-        // addr = 0 is use free region
-        (hart.mem.brk + 0xFFF) & !0xFFF
-    };
-
-    if map_addr.checked_add(aligned_len).is_none() {
-        return -libc_riscv32::ENOMEM;
-    }
-
-    if flags & libc_riscv32::MAP_ANONYMOUS != 0 {
-        for i in map_addr..map_addr + aligned_len {
-            hart.mem.store::<u8>(i, 0);
+        let end = addr.checked_add(aligned_len);
+        if end.is_none() {
+            return -libc_riscv32::ENOMEM;
         }
-    }
+        let end = end.unwrap();
 
-    if map_addr + aligned_len > hart.mem.brk {
-        hart.mem.brk = map_addr + aligned_len;
-    }
+        if end > hart.mem.brk {
+            hart.mem.brk = end;
+        }
 
-    map_addr as i32
+        // Zero out the memory
+        let region = hart.mem.pointer::<u8>(addr).as_host_ptr_mut();
+        unsafe { std::ptr::write_bytes(region, 0, aligned_len as usize) };
+
+        addr as i32
+    }
 }
 
 #[allow(unused)]

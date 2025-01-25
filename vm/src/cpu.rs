@@ -1,3 +1,4 @@
+use colored::Colorize;
 use riscv_inst::{
     codegen::rv32::{Rv32, Rv32a, Rv32c, Rv32i, Rv32m, Rv32s},
     Reg,
@@ -74,7 +75,7 @@ impl Hart32 {
             // Get the sym closest to pc but before it:
             if let Some((pc, sym)) = syms_by_pc.range(..=self.pc).next_back() {
                 if last_sym != Some(*sym) {
-                    println!("0x{:08x}: {}", pc, sym);
+                    println!("0x{:08x}: {}", pc, sym.dimmed());
                     last_sym = Some(*sym);
 
                     // wait for stdin
@@ -275,7 +276,7 @@ impl Hart32 {
                 Rv32::Rv32m(m) => match m {
                     Rv32m::Mul(mul) => reg_reg_op!(|mul.rs1, mul.rs2| rs1.wrapping_mul(rs2)),
                     Rv32m::Mulh(mulh) => reg_reg_op!(
-                        |mulh.rs1, mulh.rs2| ((rs1 as i32 as i64).wrapping_mul(rs2 as i32 as i64) as u64) >> 32
+                        |mulh.rs1, mulh.rs2| (rs1 as i32 as i64).wrapping_mul(rs2 as i32 as i64) >> 32
                     ),
                     Rv32m::Mulhsu(mulhsu) => reg_reg_op!(
                         |mulhsu.rs1, mulhsu.rs2| (((rs1 as i32 as i64) * (rs2 as i64)) >> 32) as u32
@@ -347,7 +348,7 @@ impl Hart32 {
                         return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
                     }
                     Rv32s::Mret(mret) => {
-                        // TODO: Actually handle privilege levels
+                        return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
                     }
                     Rv32s::Dret(dret) => {
                         return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
@@ -534,7 +535,12 @@ impl Hart32 {
     pub fn syscall(&mut self) {
         let call = self.get_reg(Reg::A7);
         let parsed = syscalls::riscv32::Sysno::new(call as usize);
-        println!("syscall {call} -> {parsed:?}");
+        println!(
+            "0x{:08x}: {} -> {}",
+            self.pc,
+            format!("SYSTEM({call})").green(),
+            format!("{:?}", parsed).green(),
+        );
 
         macro_rules! syscall {
                 ($syscall:ident(
