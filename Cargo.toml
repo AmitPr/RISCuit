@@ -4,6 +4,7 @@ exclude = ["riscv/*"]
 resolver = "2"
 
 [workspace.dependencies]
+riscv-vm = { path = "crates/riscv-vm" }
 riscv-inst = { path = "crates/riscv-inst" }
 libc-riscv32 = { path = "crates/libc-riscv32" }
 derisc = { path = "vm" }

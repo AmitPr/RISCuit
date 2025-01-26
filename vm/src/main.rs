@@ -1,4 +1,4 @@
-use derisc::{cpu::Hart32, elf::load_elf};
+use riscv_vm::{cpu::Hart32, elf::load_elf};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();

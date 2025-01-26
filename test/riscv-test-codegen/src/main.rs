@@ -30,7 +30,7 @@ fn main() {
     }
     let output = syn::parse_quote! {
         #![cfg(test)]
-        use derisc::{cpu::Hart32, elf::load_elf, riscv_inst::Reg};
+        use riscv_vm::{cpu::Hart32, elf::load_elf, riscv_inst::Reg};
 
         #(#tests)*
     };

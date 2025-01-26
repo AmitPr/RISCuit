@@ -27,14 +27,7 @@ dependencies = [
 name = "derisc"
 version = "0.1.0"
 dependencies = [
- "colored",
- "goblin",
- "libc",
- "libc-riscv32",
- "rand",
- "riscv-inst",
- "syscalls",
- "thiserror",
+ "riscv-vm",
 ]
 
 [[package]]
@@ -176,7 +169,21 @@ dependencies = [
 name = "riscv-tests"
 version = "0.1.0"
 dependencies = [
- "derisc",
+ "riscv-vm",
+]
+
+[[package]]
+name = "riscv-vm"
+version = "0.1.0"
+dependencies = [
+ "colored",
+ "goblin",
+ "libc",
+ "libc-riscv32",
+ "rand",
+ "riscv-inst",
+ "syscalls",
+ "thiserror",
 ]
 
 [[package]]
