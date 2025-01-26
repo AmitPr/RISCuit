@@ -60,7 +60,7 @@ fn generate_test_for_artifact(artifact: &Path) -> TokenStream {
             let elf = load_elf(&mut cpu, program);
             cpu.pc = elf.entry as u32;
 
-            let sp = 0xc0000000u32 - 0x1000;
+            let sp = 0xCFFF_F000u32;
             cpu.set_reg(Reg::Sp, sp);
 
             let res = cpu.run(elf);

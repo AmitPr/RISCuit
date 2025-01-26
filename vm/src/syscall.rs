@@ -1,8 +1,14 @@
 use std::ffi::CStr;
 
+use goblin::pe::import::Bitfield;
 use rand::RngCore;
 
 use crate::{cpu::Hart32, memory::GuestPtr};
+
+pub fn ioctl(_hart: &mut Hart32, _fd: i32, _request: u32) -> i32 {
+    // just return 0 for now
+    0
+}
 
 pub fn getrandom(_: &mut Hart32, mut buf: GuestPtr<[u8]>, len: u32, _flags: u32) -> u32 {
     let mut rng = rand::thread_rng();
@@ -30,25 +36,25 @@ pub fn brk(hart: &mut Hart32, addr: GuestPtr<u8>) -> u32 {
     println!("brk: new_brk={:#x} cur_brk={old_brk:#x}", addr.addr());
 
     // brk(0) is used to query the current break
+    // brk returns the old program break on failure
     if new_brk == 0 {
         return old_brk;
     }
 
-    hart.mem.brk = new_brk;
-    if new_brk < old_brk {
-        // Zero old memory
-        let decrement = (old_brk - new_brk) as usize;
-        let region = hart.mem.pointer::<u8>(new_brk).as_host_ptr_mut();
-        unsafe { std::ptr::write_bytes(region, 0, decrement) };
-    } else {
-        // Zero new memory
-        let increment = (new_brk - old_brk) as usize;
-        let region = hart.mem.pointer::<u8>(old_brk).as_host_ptr_mut();
-        unsafe { std::ptr::write_bytes(region, 0, increment) };
+    if new_brk >= hart.mem.mmap_top {
+        return old_brk;
     }
 
-    // brk() returns 0 on success, but looks like muslc expects the new break?
-    new_brk
+    hart.mem.brk = new_brk;
+    // Zero memory
+    let base = new_brk.min(old_brk);
+    let region = hart.mem.pointer::<u8>(base).as_host_ptr_mut();
+    let size = new_brk.abs_diff(old_brk) as usize;
+    unsafe { std::ptr::write_bytes(region, 0, size) };
+
+    // brk returns the new program break on success
+    // new_brk
+    0
 }
 
 pub fn gettid(_hart: &mut Hart32) -> u32 {
@@ -126,19 +132,16 @@ pub fn readlinkat(
 }
 
 pub fn write(_hart: &mut Hart32, fd: i32, buf: GuestPtr<[u8]>, count: u32) -> i32 {
+    let buf = buf.read(count as usize);
     match fd {
         1 => {
             // Write to stdout
-            let buf = buf.read(count as usize);
-            let s = std::str::from_utf8(buf).unwrap();
-            print!("{}", s);
+            print!("{}", std::str::from_utf8(buf).unwrap());
             count as i32
         }
         2 => {
             // Write to stderr
-            let buf = buf.read(count as usize);
-            let s = std::str::from_utf8(buf).unwrap();
-            eprint!("{}", s);
+            eprint!("{}", std::str::from_utf8(buf).unwrap());
             count as i32
         }
         _ => -1,
@@ -146,15 +149,25 @@ pub fn write(_hart: &mut Hart32, fd: i32, buf: GuestPtr<[u8]>, count: u32) -> i3
 }
 
 #[repr(C)]
-pub struct Iovec {
-    iov_base: *const u8,
+#[allow(non_camel_case_types)]
+pub struct iovec {
+    iov_base: u32,
     iov_len: u32,
 }
-pub fn writev(_hart: &mut Hart32, fd: i32, iov: GuestPtr<[Iovec]>, iovcnt: i32) -> i32 {
+pub fn writev(hart: &mut Hart32, fd: i32, iov: GuestPtr<u8>, iovcnt: i32) -> i32 {
+    println!("writev: fd={} iovcnt={} iov={:x}", fd, iovcnt, iov.addr());
+    if iovcnt == 0 {
+        hart.running = false;
+    }
     let mut total = 0;
-    for &Iovec { iov_base, iov_len } in iov.read(iovcnt as usize) {
-        let ptr = GuestPtr::new(iov.base(), iov_base as u32);
-        let count = write(_hart, fd, ptr, iov_len);
+    for i in 0..iovcnt {
+        let iov_ptr = iov
+            .offset(i * std::mem::size_of::<iovec>() as i32)
+            .cast::<iovec>();
+        let iov = iov_ptr.read();
+
+        let data_ptr = hart.mem.pointer(iov.iov_base);
+        let count = write(hart, fd, data_ptr, iov.iov_len as u32);
         if count < 0 {
             return count;
         }
@@ -180,63 +193,55 @@ pub fn mmap(
     hart: &mut Hart32,
     addr: u32,
     len: u32,
-    prot: u32,
-    flags: u32,
+    _prot: u32,
+    _flags: u32,
     fd: i32,
     _offset: u32,
-) -> i32 {
+) -> u32 {
     println!(
         "mmap: addr={:#x} len={:#x} prot={:#x} flags={:#x} fd={} offset={:#x}",
-        addr, len, prot, flags, fd, _offset
+        addr, len, _prot, _flags, fd, _offset
     );
 
-    if flags & !(libc_riscv32::MAP_PRIVATE | libc_riscv32::MAP_ANON | libc_riscv32::MAP_FIXED) != 0
-    {
-        println!("mmap: Invalid flags: {:#x}", flags);
-        return -libc_riscv32::EINVAL;
+    let size = (len + 0xFFF) & !0xFFF;
+    if fd != -1 || size.is_zero() {
+        println!("mmap: failed to allocate region");
+        return libc_riscv32::MAP_FAILED;
     }
 
-    if flags & libc_riscv32::MAP_ANONYMOUS == 0 && fd < 0 {
-        return -libc_riscv32::EBADF;
-    }
+    // Align up to page size
+    let map_addr = if addr != 0 {
+        // Align hint downwards
+        addr & !0xFFF
+    } else {
+        // Use mmap_top, aligning downwards
+        hart.mem.mmap_top.saturating_sub(size) & !0xFFF
+    };
 
-    if prot & !(libc_riscv32::PROT_READ | libc_riscv32::PROT_WRITE | libc_riscv32::PROT_EXEC) != 0 {
-        return -libc_riscv32::EINVAL;
-    }
-
-    if addr % 0xFFF != 0 {
-        return -libc_riscv32::EINVAL;
-    }
-
-    let aligned_len = (len + 0xFFF) & !0xFFF;
-    if aligned_len < len {
-        return -libc_riscv32::ENOMEM;
+    if map_addr.checked_add(size).is_none() {
+        println!("mmap: failed to allocate region");
+        return libc_riscv32::MAP_FAILED;
     }
 
     if addr == 0 {
-        // We can choose any address, just treat it like a `brk`
-        if hart.mem.brk.checked_add(aligned_len).is_none() {
-            return -libc_riscv32::ENOMEM;
-        }
-        let new_brk = hart.mem.brk + aligned_len;
-        brk(hart, hart.mem.pointer::<u8>(new_brk)) as i32
-    } else {
-        let end = addr.checked_add(aligned_len);
-        if end.is_none() {
-            return -libc_riscv32::ENOMEM;
-        }
-        let end = end.unwrap();
-
-        if end > hart.mem.brk {
-            hart.mem.brk = end;
-        }
-
-        // Zero out the memory
-        let region = hart.mem.pointer::<u8>(addr).as_host_ptr_mut();
-        unsafe { std::ptr::write_bytes(region, 0, aligned_len as usize) };
-
-        addr as i32
+        hart.mem.mmap_top = map_addr;
     }
+
+    // Zero out the region
+    unsafe {
+        std::ptr::write_bytes(
+            hart.mem.pointer::<u8>(map_addr).as_host_ptr_mut(),
+            0,
+            size as usize,
+        )
+    }
+
+    println!(
+        "mmap: returning region at {:#x} of size {:#x}",
+        map_addr, size
+    );
+
+    map_addr
 }
 
 #[allow(unused)]
@@ -266,9 +271,9 @@ pub fn futex(
     }
 }
 
-pub fn mprotect(_hart: &mut Hart32, _addr: GuestPtr<u8>, _len: u32, _prot: u32) -> u32 {
-    // TODO
-    0
+pub fn mprotect(_hart: &mut Hart32, _addr: GuestPtr<u8>, _len: u32, _prot: u32) -> i32 {
+    // unimplemented
+    -libc_riscv32::ENOSYS
 }
 
 pub fn statx(
@@ -315,14 +320,30 @@ pub fn tgkill(_hart: &mut Hart32, _tgid: i32, _tid: i32, _sig: i32) -> i32 {
     0
 }
 
+#[repr(C)]
+#[derive(Debug)]
+pub struct PollFd {
+    fd: i32,
+    events: i16,
+    revents: i16,
+}
 pub fn ppoll(
     _hart: &mut Hart32,
-    _fds: GuestPtr<u8>,
-    _nfds: u32,
+    mut fds: GuestPtr<[PollFd]>,
+    nfds: u32,
     _tsp: GuestPtr<u8>,
     _sigmask: GuestPtr<u8>,
     _sigsetsize: u32,
 ) -> i32 {
-    // stubbed out
+    // This method is called during CRT init for stdin/stdout/stderr
+    // We can just return 0, as these file descriptors are always ready
+    let fds = fds.read_mut(nfds as usize);
+    for fd in fds {
+        if fd.fd > 2 {
+            // We don't support any other file descriptors
+            return -libc_riscv32::ENOSYS;
+        }
+    }
+
     0
 }

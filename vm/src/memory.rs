@@ -27,6 +27,7 @@ pub const MEMORY_SIZE: usize = const {
 pub struct Memory {
     ptr: *mut u8,
     pub brk: u32,
+    pub mmap_top: u32,
 }
 
 impl Memory {
@@ -48,7 +49,8 @@ impl Memory {
 
         Self {
             ptr: ptr as *mut u8,
-            brk: 0x1000000, // 16MB
+            brk: 0,
+            mmap_top: 0xC000_0000u32, // Start mmap at 3GB, downwards
         }
     }
 
@@ -57,6 +59,7 @@ impl Memory {
     }
 
     pub fn store<T: Primitive>(&mut self, addr: u32, val: T) {
+        println!("Store at {:#x}", addr);
         unsafe {
             (self.ptr.add(addr as usize) as *mut T).write_unaligned(val);
         }
@@ -134,6 +137,14 @@ impl<T: ?Sized> GuestPtr<T> {
 
     pub fn base(&self) -> *const u8 {
         self.base
+    }
+
+    pub fn cast<U>(&self) -> GuestPtr<U> {
+        GuestPtr {
+            base: self.base,
+            offset: self.offset,
+            _phantom: PhantomData,
+        }
     }
 }
 

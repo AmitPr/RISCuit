@@ -5,6 +5,7 @@ use goblin::elf::{
     program_header::PT_LOAD,
     reloc::{R_RISCV_32, R_RISCV_JUMP_SLOT, R_RISCV_RELATIVE},
 };
+use riscv_inst::Reg;
 
 use crate::cpu::Hart32;
 
@@ -135,6 +136,22 @@ pub fn load_elf<'a>(cpu: &mut Hart32, bytes: &'a [u8]) -> goblin::elf::Elf<'a> {
     brk = (brk + 0xfff) & !0xfff;
     cpu.mem.brk = brk;
     println!("Loaded ELF at {:08x}, brk={:08x}", elf.entry, brk);
+    // Stack
+    // TODO: what to set stack pointer to initially?
+    let sp = 0xCFFF_F000u32;
+    cpu.set_reg(Reg::Sp, sp);
+    // Global pointer is at __DATA_BEGIN__
+    let data_begin = elf
+        .syms
+        .iter()
+        .find(|sym| elf.strtab.get_at(sym.st_name) == Some("__DATA_BEGIN__"))
+        .map(|sym| sym.st_value as u32)
+        .unwrap_or(0);
+    cpu.set_reg(Reg::Gp, data_begin);
+    println!("Stack at {:#x}, GP at {:#x}", sp, data_begin);
+
+    // PC
+    cpu.pc = elf.entry as u32;
 
     elf
 }

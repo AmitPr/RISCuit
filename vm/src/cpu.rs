@@ -20,6 +20,7 @@ pub struct Hart32 {
     pub exit_code: i32,
     /// Atomic memory reservation set on this hart
     pub amo_rsv: Option<GuestPtr<u8>>,
+    pub debug: bool,
 }
 
 impl Hart32 {
@@ -33,6 +34,7 @@ impl Hart32 {
             running: true,
             exit_code: 0,
             amo_rsv: None,
+            debug: true,
         }
     }
 
@@ -53,6 +55,13 @@ impl Hart32 {
         self.regs[r as usize] = val;
     }
 
+    /// Dump registers to stdout
+    pub fn dump_regs(&self) {
+        for (i, reg) in self.regs.iter().enumerate() {
+            println!("{:?}: 0x{:08x}", unsafe { Reg::from_u5(i as u8) }, reg);
+        }
+    }
+
     /// Execute one instruction
     #[allow(unused)]
     pub fn run(&mut self, elf: goblin::elf::Elf<'_>) -> Result<i32, VmError> {
@@ -70,12 +79,25 @@ impl Hart32 {
             })
             .collect();
         let mut last_sym = None;
-        let mut debug = false;
         while self.running {
+            if self.pc == 0x00010532 {
+                self.dump_regs();
+            }
             // Get the sym closest to pc but before it:
             if let Some((pc, sym)) = syms_by_pc.range(..=self.pc).next_back() {
                 if last_sym != Some(*sym) {
-                    println!("0x{:08x}: {}", pc, sym.dimmed());
+                    if pc == &self.pc {
+                        print!("0x{:08x}: {}(", pc, sym.dimmed());
+                        let regs = (Reg::A0 as usize..=Reg::A7 as usize)
+                            .map(|i| {
+                                format!("{:?}={:x}", unsafe { Reg::from_u5(i as u8) }, self.regs[i])
+                            })
+                            .collect::<Vec<String>>()
+                            .join(", ");
+                        println!("{})", regs.dimmed());
+                    } else {
+                        println!("0x{:08x}: {}", pc, sym.dimmed());
+                    }
                     last_sym = Some(*sym);
 
                     // wait for stdin
@@ -87,12 +109,10 @@ impl Hart32 {
                             self.exit_code = 0;
                         }
                         "d" => {
-                            debug = !debug;
+                            self.debug = !self.debug;
                         }
                         "r" => {
-                            for (i, reg) in self.regs.iter().enumerate() {
-                                println!("{:?}: 0x{:08x}", unsafe { Reg::from_u5(i as u8) }, reg);
-                            }
+                            self.dump_regs();
                         }
                         _ => {}
                     }
@@ -107,7 +127,7 @@ impl Hart32 {
             let inc = if matches!(op, Rv32::Rv32c(_)) { 2 } else { 4 };
 
             let mut next_pc = self.pc.wrapping_add(inc);
-            if debug {
+            if self.debug {
                 println!("0x{:08x}:\t{inst:08x}\t{op}", self.pc);
             }
 
@@ -348,7 +368,8 @@ impl Hart32 {
                         return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
                     }
                     Rv32s::Mret(mret) => {
-                        return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
+                        // TODO: Not erroring because the ISA tests use this.
+                        // But we haven't implemented privilege levels yet.
                     }
                     Rv32s::Dret(dret) => {
                         return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
@@ -520,7 +541,7 @@ impl Hart32 {
                     }
                 },
                 _ => {
-                    return Err(VmError::IllegalInstruction { addr: self.pc, op });
+                    return Err(VmError::UnimplementedInstruction { addr: self.pc, op });
                 }
             }
 
@@ -571,6 +592,8 @@ impl Hart32 {
             }
 
         match call {
+            // ioctl(int fd, unsigned long request, ...)
+            29 => syscall!(ioctl(val fd, val request)),
             // write(int fd, const void* buf, size_t count)
             64 => syscall!(write(val fd, ptr buf, val count)),
             // writev(int fd, const struct iovec* iov, int iovcnt)
@@ -596,7 +619,10 @@ impl Hart32 {
             // gettid()
             178 => syscall!(gettid()),
             // brk(void* addr)
-            214 => syscall!(brk(ptr addr)),
+            214 => {
+                // self.debug = true;
+                syscall!(brk(ptr addr))
+            }
             // mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
             222 => {
                 syscall!(mmap(val addr, val length, val prot, val flags, val fd, val offset))
