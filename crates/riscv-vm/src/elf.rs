@@ -44,7 +44,7 @@ pub fn load_elf<'a>(cpu: &mut Hart32, bytes: &'a [u8]) -> goblin::elf::Elf<'a> {
         }
 
         // Load segments
-        println!("Loading library: {} at {:08x}", lib_name, base_addr);
+        tracing::debug!("Loading library: {} at {:08x}", lib_name, base_addr);
         for ph in &lib_elf.program_headers {
             if ph.p_type == PT_LOAD {
                 let vaddr = base_addr + ph.p_vaddr as u32;
@@ -52,10 +52,10 @@ pub fn load_elf<'a>(cpu: &mut Hart32, bytes: &'a [u8]) -> goblin::elf::Elf<'a> {
                     cpu.mem
                         .store::<u8>(vaddr + i as u32, lib_data[ph.p_offset as usize + i]);
                 }
-                // Zero BSS
-                for i in ph.p_filesz as usize..ph.p_memsz as usize {
-                    cpu.mem.store::<u8>(vaddr + i as u32, 0);
-                }
+                // BSS already zero since fresh mmap
+                // for i in ph.p_filesz as usize..ph.p_memsz as usize {
+                //     cpu.mem.store::<u8>(vaddr + i as u32, 0);
+                // }
             }
         }
 
@@ -80,7 +80,7 @@ pub fn load_elf<'a>(cpu: &mut Hart32, bytes: &'a [u8]) -> goblin::elf::Elf<'a> {
                     R_RISCV_RELATIVE | R_RISCV_32 | R_RISCV_JUMP_SLOT => {
                         cpu.mem.store::<u32>(addr, target);
                     }
-                    _ => println!("Unhandled relocation: {} at {:#x}", rela.r_type, addr),
+                    _ => tracing::warn!("Unhandled relocation: {} at {:#x}", rela.r_type, addr),
                 }
             }
         }
@@ -97,9 +97,10 @@ pub fn load_elf<'a>(cpu: &mut Hart32, bytes: &'a [u8]) -> goblin::elf::Elf<'a> {
                 cpu.mem
                     .store::<u8>(vaddr + i as u32, bytes[ph.p_offset as usize + i]);
             }
-            for i in ph.p_filesz as usize..ph.p_memsz as usize {
-                cpu.mem.store::<u8>(vaddr + i as u32, 0);
-            }
+            // BSS already zero since fresh mmap
+            // for i in ph.p_filesz as usize..ph.p_memsz as usize {
+            //     cpu.mem.store::<u8>(vaddr + i as u32, 0);
+            // }
             if vaddr + ph.p_memsz as u32 > brk {
                 brk = vaddr + ph.p_memsz as u32;
             }
@@ -128,14 +129,14 @@ pub fn load_elf<'a>(cpu: &mut Hart32, bytes: &'a [u8]) -> goblin::elf::Elf<'a> {
                 R_RISCV_RELATIVE | R_RISCV_32 | R_RISCV_JUMP_SLOT => {
                     cpu.mem.store::<u32>(addr, target);
                 }
-                _ => println!("Unhandled relocation: {} at {:#x}", rela.r_type, addr),
+                _ => tracing::warn!("Unhandled relocation: {} at {:#x}", rela.r_type, addr),
             }
         }
     }
     // Align and set brk
     brk = (brk + 0xfff) & !0xfff;
     cpu.mem.brk = brk;
-    println!("Loaded ELF at {:08x}, brk={:08x}", elf.entry, brk);
+    tracing::info!("Loaded ELF. Start at {:08x}, brk={:08x}", elf.entry, brk);
     // Stack
     // TODO: what to set stack pointer to initially?
     let sp = 0xCFFF_F000u32;
@@ -148,7 +149,7 @@ pub fn load_elf<'a>(cpu: &mut Hart32, bytes: &'a [u8]) -> goblin::elf::Elf<'a> {
         .map(|sym| sym.st_value as u32)
         .unwrap_or(0);
     cpu.set_reg(Reg::Gp, data_begin);
-    println!("Stack at {:#x}, GP at {:#x}", sp, data_begin);
+    tracing::debug!("Stack at {:#x}, GP at {:#x}", sp, data_begin);
 
     // PC
     cpu.pc = elf.entry as u32;

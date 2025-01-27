@@ -59,10 +59,10 @@ impl Memory {
     }
 
     pub fn store<T: Primitive>(&mut self, addr: u32, val: T) {
-        println!("Store at {:#x}", addr);
         unsafe {
             (self.ptr.add(addr as usize) as *mut T).write_unaligned(val);
         }
+        tracing::trace!("Store at {:#x}", addr);
     }
 
     pub fn pointer<T: ?Sized>(&self, addr: u32) -> GuestPtr<T> {

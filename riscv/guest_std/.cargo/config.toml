@@ -1,2 +1,0 @@
-[rust]
-llvm-libunwind = 'in-tree'

@@ -12,3 +12,4 @@ libc-riscv32.workspace = true
 syscalls = { version = "0.6.18", features = ["riscv32"] }
 thiserror = "2.0.11"
 colored = "3.0.0"
+tracing = "0.1.41"

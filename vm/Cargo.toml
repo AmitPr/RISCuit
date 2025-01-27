@@ -5,3 +5,7 @@ edition = "2021"
 
 [dependencies]
 riscv-vm.workspace = true
+clap = { version = "4.5.27", features = ["derive"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+goblin = "0.9.3"

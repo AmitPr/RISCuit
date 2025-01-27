@@ -33,7 +33,7 @@ pub fn riscv_hwprobe(
 pub fn brk(hart: &mut Hart32, addr: GuestPtr<u8>) -> u32 {
     let old_brk = hart.mem.brk;
     let new_brk = addr.addr();
-    println!("brk: new_brk={:#x} cur_brk={old_brk:#x}", addr.addr());
+    tracing::trace!("brk: new_brk={:#x} cur_brk={old_brk:#x}", addr.addr());
 
     // brk(0) is used to query the current break
     // brk returns the old program break on failure
@@ -133,6 +133,8 @@ pub fn readlinkat(
 
 pub fn write(_hart: &mut Hart32, fd: i32, buf: GuestPtr<[u8]>, count: u32) -> i32 {
     let buf = buf.read(count as usize);
+    // TODO: With tracing, should we still print to stdout/stderr?
+    // Tracing is more for debugging/telemetry, not for user output.
     match fd {
         1 => {
             // Write to stdout
@@ -155,7 +157,6 @@ pub struct iovec {
     iov_len: u32,
 }
 pub fn writev(hart: &mut Hart32, fd: i32, iov: GuestPtr<u8>, iovcnt: i32) -> i32 {
-    println!("writev: fd={} iovcnt={} iov={:x}", fd, iovcnt, iov.addr());
     if iovcnt == 0 {
         hart.running = false;
     }
@@ -178,7 +179,7 @@ pub fn writev(hart: &mut Hart32, fd: i32, iov: GuestPtr<u8>, iovcnt: i32) -> i32
 }
 
 pub fn exit(hart: &mut Hart32, status: i32) -> u32 {
-    println!("Program exited with status {}", status);
+    tracing::info!("Program exited with status {}", status);
     hart.running = false;
     hart.exit_code = status;
 
@@ -198,14 +199,13 @@ pub fn mmap(
     fd: i32,
     _offset: u32,
 ) -> u32 {
-    println!(
-        "mmap: addr={:#x} len={:#x} prot={:#x} flags={:#x} fd={} offset={:#x}",
-        addr, len, _prot, _flags, fd, _offset
+    tracing::trace!(
+        "mmap: addr={addr:#x} len={len:#x} prot={_prot:#x} flags={_flags:#x} fd={fd} offset={_offset:#x}"
     );
 
     let size = (len + 0xFFF) & !0xFFF;
     if fd != -1 || size.is_zero() {
-        println!("mmap: failed to allocate region");
+        tracing::warn!("mmap: invalid fd or size");
         return libc_riscv32::MAP_FAILED;
     }
 
@@ -219,7 +219,7 @@ pub fn mmap(
     };
 
     if map_addr.checked_add(size).is_none() {
-        println!("mmap: failed to allocate region");
+        tracing::warn!("mmap: address overflow");
         return libc_riscv32::MAP_FAILED;
     }
 
@@ -236,10 +236,7 @@ pub fn mmap(
         )
     }
 
-    println!(
-        "mmap: returning region at {:#x} of size {:#x}",
-        map_addr, size
-    );
+    tracing::debug!("mmap: returning region at {map_addr:#x} of size {size:#x}");
 
     map_addr
 }
@@ -250,24 +247,70 @@ pub fn munmap(hart: &mut Hart32, addr: u32, len: u32) -> u32 {
 }
 
 pub fn futex(
-    _hart: &mut Hart32,
-    uaddr: GuestPtr<i32>,
-    op: i32,
-    val: i32,
+    hart: &mut Hart32,
+    uaddr: GuestPtr<u32>,
+    op: u32,
+    val: u32,
     _utime: GuestPtr<i32>,
     _uaddr2: GuestPtr<i32>,
-    _val3: i32,
+    mut val3: u32,
 ) -> i32 {
-    match op & 0x7f {
-        0 => {
-            if uaddr.read() == val {
-                0
-            } else {
-                -libc_riscv32::EAGAIN
+    let futex_word = uaddr.read();
+    tracing::trace!(
+        "futex: uaddr={:x}({futex_word:x}) op={op} val={val} utime={:x} uaddr2={:x} val3={val3:x}",
+        uaddr.addr(),
+        _utime.addr(),
+        _uaddr2.addr(),
+    );
+    let cmd = op & libc_riscv32::FUTEX_CMD_MASK;
+    if op & libc_riscv32::FUTEX_CLOCK_REALTIME != 0 {
+        match cmd {
+            libc_riscv32::FUTEX_WAIT_BITSET
+            | libc_riscv32::FUTEX_WAIT_REQUEUE_PI
+            | libc_riscv32::FUTEX_LOCK_PI2 => {}
+            _ => {
+                tracing::warn!("futex: invalid cmd");
+                return -libc_riscv32::ENOSYS;
             }
         }
-        1 => 1,
-        _ => -libc_riscv32::ENOSYS,
+    }
+    // First pass: set arguments
+    match cmd {
+        libc_riscv32::FUTEX_WAIT | libc_riscv32::FUTEX_WAKE => {
+            val3 = libc_riscv32::FUTEX_BITSET_MATCH_ANY
+        }
+        _ => {}
+    }
+
+    fn futex_wait(hart: &mut Hart32, uaddr: GuestPtr<u32>, val: u32, val3: u32) -> i32 {
+        let futex_word = uaddr.read();
+
+        todo!()
+    }
+    fn futex_wake(hart: &mut Hart32, uaddr: GuestPtr<u32>, val: u32, val3: u32) -> i32 {
+        todo!()
+    }
+    match cmd {
+        libc_riscv32::FUTEX_WAIT => {
+            // futex_wait(hart, uaddr, val, libc_riscv32::FUTEX_BITSET_MATCH_ANY)
+            // immediately wake thread
+            hart.mem.store::<u32>(uaddr.addr(), 0);
+            0
+        }
+        libc_riscv32::FUTEX_WAIT_BITSET => {
+            //futex_wait(hart, uaddr, val, val3),
+            hart.mem.store::<u32>(uaddr.addr(), 0);
+            0
+        }
+        libc_riscv32::FUTEX_WAKE => {
+            // futex_wake(hart, uaddr, val, libc_riscv32::FUTEX_BITSET_MATCH_ANY)
+            0
+        }
+        libc_riscv32::FUTEX_WAKE_BITSET => 0, //futex_wake(hart, uaddr, val, val3),
+        _ => {
+            tracing::warn!("futex: unhandled cmd");
+            -libc_riscv32::ENOSYS
+        }
     }
 }
 

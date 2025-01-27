@@ -120,36 +120,6 @@ fn find_best_bit_range(
     (*start, *end)
 }
 
-// Helper function to print the tree for debugging
-#[allow(unused)]
-fn print_tree(node: &DecisionNode, indent: usize, opcodes: &[Opcode]) {
-    match node {
-        DecisionNode::Leaf(indices) => {
-            let names = indices.iter().map(|&idx| (&opcodes[idx].name, idx));
-            println!(
-                "{}Leaf: {:?}",
-                " ".repeat(indent),
-                names.collect::<Vec<_>>()
-            );
-        }
-        DecisionNode::Branch {
-            bit_range,
-            children,
-        } => {
-            println!(
-                "{}Branch on bits {}..={}",
-                " ".repeat(indent),
-                bit_range.1,
-                bit_range.0
-            );
-            for (pattern, child) in children {
-                println!("{}Pattern {:b}:", " ".repeat(indent + 2), pattern);
-                print_tree(child, indent + 4, opcodes);
-            }
-        }
-    }
-}
-
 fn build_match(
     src: Ident,
     base_isa: String,
