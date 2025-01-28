@@ -9,3 +9,8 @@ riscv-kernel-linux = { path = "crates/riscv-kernel-linux" }
 riscv-inst = { path = "crates/riscv-inst" }
 libc-riscv32 = { path = "crates/libc-riscv32" }
 derisc = { path = "vm" }
+
+syn = "2.0"
+quote = "1.0"
+proc-macro2 = "1.0"
+prettyplease = "0.2"

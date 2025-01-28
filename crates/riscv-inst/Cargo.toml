@@ -3,9 +3,4 @@ name = "riscv-inst"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-default = ["m", "c"]
-m = []
-c = []
-
 [dependencies]
