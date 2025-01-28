@@ -30,7 +30,8 @@ fn main() {
     }
     let output = syn::parse_quote! {
         #![cfg(test)]
-        use riscv_vm::{cpu::Hart32, elf::load_elf, riscv_inst::Reg};
+        use riscv_kernel_linux::MockLinux;
+        use riscv_vm::machine::Machine;
 
         #(#tests)*
     };
@@ -56,17 +57,16 @@ fn generate_test_for_artifact(artifact: &Path) -> TokenStream {
         fn #test_name() {
             let program = include_bytes!(#program_file);
 
-            let mut cpu = Hart32::new();
-            let elf = load_elf(&mut cpu, program);
-            cpu.pc = elf.entry as u32;
-
-            let sp = 0xCFFF_F000u32;
-            cpu.set_reg(Reg::Sp, sp);
-
-            let res = cpu.run(elf);
+            let mut machine = Machine::new(MockLinux::default());
+            machine.kernel.load_static_elf(&mut machine.hart, &mut machine.mem, program, &[], &[]);
+            let res = machine.run();
             assert!(res.is_ok(), "Test failed: {}", res.unwrap_err());
-            let exit = res.unwrap();
-            assert_eq!(exit, 0, "Test failed with exit code {}", exit);
+            assert_eq!(
+                machine.kernel.exit_code(),
+                Some(0),
+                "Test failed with exit code {:?}",
+                machine.kernel.exit_code()
+            );
         }
     }
 }

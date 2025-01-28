@@ -4,8 +4,9 @@ use riscv_inst::{
 };
 
 use crate::{
-    error::{MemoryAccess, VmError},
-    memory::{GuestPtr, Memory},
+    error::{HartError, MachineError, MemoryAccess, MemoryError},
+    machine::{Kernel, StepResult},
+    memory::Memory,
 };
 
 /// A simple CPU for RV32I instructions
@@ -14,12 +15,8 @@ pub struct Hart32 {
     csrs: [u32; 4096],
     pub pc: u32,
     pub inst_count: u64,
-    pub mem: Memory,
-    pub running: bool,
-    pub exit_code: i32,
     /// Atomic memory reservation set on this hart
-    pub amo_rsv: Option<GuestPtr<u8>>,
-    pub debug: bool,
+    pub amo_rsv: Option<u32>,
 }
 
 impl Hart32 {
@@ -29,11 +26,7 @@ impl Hart32 {
             csrs: [0; 4096],
             pc: 0,
             inst_count: 0,
-            mem: Memory::new(),
-            running: true,
-            exit_code: 0,
             amo_rsv: None,
-            debug: true,
         }
     }
 
@@ -64,9 +57,13 @@ impl Hart32 {
     }
 
     #[inline(always)]
-    pub fn step(&mut self) -> Result<(u32, Rv32), VmError> {
-        let inst = self.mem.load::<u32>(self.pc);
-        let op = Rv32::parse(inst).ok_or(VmError::InvalidInstruction {
+    pub fn step<K: Kernel>(
+        &mut self,
+        mem: &mut Memory,
+        kernel: &mut K,
+    ) -> Result<StepResult, MachineError<K::Error>> {
+        let inst = mem.load::<u32>(self.pc);
+        let op = Rv32::parse(inst).ok_or(HartError::InvalidInstruction {
             addr: self.pc,
             inst,
         })?;
@@ -149,16 +146,17 @@ impl Hart32 {
             (|$inst:ident, $old:ident, $rs2:ident| $body:expr) => {{
                 let addr = reg!($inst.rs1());
                 if addr & 3 != 0 {
-                    return Err(VmError::UnalignedMemoryAccess {
+                    return Err(MemoryError::UnalignedMemoryAccess {
                         access: MemoryAccess::Load,
                         addr,
                         required: 4,
-                    });
+                    }
+                    .into());
                 }
-                let $old = self.mem.load::<u32>(addr);
+                let $old = mem.load::<u32>(addr);
                 reg!($inst.rd(), $old);
                 let $rs2 = reg!($inst.rs2());
-                self.mem.store::<u32>(addr, $body as u32);
+                mem.store::<u32>(addr, $body as u32);
             }};
         }
 
@@ -183,28 +181,28 @@ impl Hart32 {
                 Rv32i::Bltu(bltu) => branch_op!(|bltu.rs1, bltu.rs2| rs1 < rs2),
                 Rv32i::Bgeu(bgeu) => branch_op!(|bgeu.rs1, bgeu.rs2| rs1 >= rs2),
                 Rv32i::Lb(lb) => reg_imm_op!(
-                    |lb.rs1, lb.imm| self.mem.load::<i8>(rs1.wrapping_add_signed(imm)) as i32
+                    |lb.rs1, lb.imm| mem.load::<i8>(rs1.wrapping_add_signed(imm)) as i32
                 ),
                 Rv32i::Lh(lh) => reg_imm_op!(
-                    |lh.rs1, lh.imm| self.mem.load::<i16>(rs1.wrapping_add_signed(imm)) as i32
+                    |lh.rs1, lh.imm| mem.load::<i16>(rs1.wrapping_add_signed(imm)) as i32
                 ),
                 Rv32i::Lw(lw) => reg_imm_op!(
-                    |lw.rs1, lw.imm| self.mem.load::<u32>(rs1.wrapping_add_signed(imm))
+                    |lw.rs1, lw.imm| mem.load::<u32>(rs1.wrapping_add_signed(imm))
                 ),
                 Rv32i::Lbu(lbu) => reg_imm_op!(
-                    |lbu.rs1, lbu.imm| self.mem.load::<u8>(rs1.wrapping_add_signed(imm))
+                    |lbu.rs1, lbu.imm| mem.load::<u8>(rs1.wrapping_add_signed(imm))
                 ),
                 Rv32i::Lhu(lhu) => reg_imm_op!(
-                    |lhu.rs1, lhu.imm| self.mem.load::<u16>(rs1.wrapping_add_signed(imm))
+                    |lhu.rs1, lhu.imm| mem.load::<u16>(rs1.wrapping_add_signed(imm))
                 ),
                 Rv32i::Sb(sb) => {
-                    store_op!(|sb.rs1, sb.rs2, addr| self.mem.store::<u8>(addr, rs2 as u8))
+                    store_op!(|sb.rs1, sb.rs2, addr| mem.store::<u8>(addr, rs2 as u8))
                 }
                 Rv32i::Sh(sh) => {
-                    store_op!(|sh.rs1, sh.rs2, addr| self.mem.store::<u16>(addr, rs2 as u16))
+                    store_op!(|sh.rs1, sh.rs2, addr| mem.store::<u16>(addr, rs2 as u16))
                 }
                 Rv32i::Sw(sw) => {
-                    store_op!(|sw.rs1, sw.rs2, addr| self.mem.store::<u32>(addr, rs2))
+                    store_op!(|sw.rs1, sw.rs2, addr| mem.store::<u32>(addr, rs2))
                 }
                 Rv32i::Addi(addi) => {
                     reg_imm_op!(|addi.rs1, addi.imm| rs1.wrapping_add_signed(imm))
@@ -231,9 +229,17 @@ impl Hart32 {
                 Rv32i::And(and) => reg_reg_op!(|and.rs1, and.rs2| rs1 & rs2),
                 Rv32i::Fence(_) => {}
                 Rv32i::FenceI(_) => {}
-                Rv32i::Ecall(_) => self.syscall(),
-                Rv32i::Ebreak(_) => {}
-                Rv32i::Unimp(_) => return Err(VmError::IllegalInstruction { addr: self.pc, op }),
+                Rv32i::Ecall(_) => match kernel.syscall(self, mem)? {
+                    StepResult::Ok => {}
+                    res => return Ok(res),
+                },
+                Rv32i::Ebreak(_) => match kernel.ebreak(self, mem)? {
+                    StepResult::Ok => {}
+                    res => return Ok(res),
+                },
+                Rv32i::Unimp(_) => {
+                    return Err(HartError::IllegalInstruction { addr: self.pc, op }.into())
+                }
             },
             Rv32::Rv32m(m) => match m {
                 Rv32m::Mul(mul) => reg_reg_op!(|mul.rs1, mul.rs2| rs1.wrapping_mul(rs2)),
@@ -301,29 +307,29 @@ impl Hart32 {
             },
             Rv32::Rv32s(s) => match s {
                 Rv32s::Uret(_) => {
-                    return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
+                    return Err(HartError::UnimplementedInstruction { addr: self.pc, op }.into())
                 }
                 Rv32s::Sret(_) => {
-                    return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
+                    return Err(HartError::UnimplementedInstruction { addr: self.pc, op }.into())
                 }
                 Rv32s::Hret(_) => {
-                    return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
+                    return Err(HartError::UnimplementedInstruction { addr: self.pc, op }.into())
                 }
                 Rv32s::Mret(_) => {
                     // TODO: Not erroring because the ISA tests use this.
                     // But we haven't implemented privilege levels yet.
                 }
                 Rv32s::Dret(_) => {
-                    return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
+                    return Err(HartError::UnimplementedInstruction { addr: self.pc, op }.into())
                 }
                 Rv32s::SfenceVm(_) => {
-                    return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
+                    return Err(HartError::UnimplementedInstruction { addr: self.pc, op }.into())
                 }
                 Rv32s::SfenceVma(_) => {
-                    return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
+                    return Err(HartError::UnimplementedInstruction { addr: self.pc, op }.into())
                 }
                 Rv32s::Wfi(_) => {
-                    return Err(VmError::UnimplementedInstruction { addr: self.pc, op })
+                    return Err(HartError::UnimplementedInstruction { addr: self.pc, op }.into())
                 }
                 Rv32s::Csrrw(rw) => csr_op!(|rw.csr12, rw.rs1| self.csrs[csr12] = rs1),
                 Rv32s::Csrrs(rs) => csr_op!(|rs.csr12, rs.rs1| self.csrs[csr12] |= rs1),
@@ -337,28 +343,30 @@ impl Hart32 {
                 Rv32a::LrW(lr_w) => {
                     let addr = reg!(lr_w.rs1());
                     if addr & 3 != 0 {
-                        return Err(VmError::UnalignedMemoryAccess {
+                        return Err(MemoryError::UnalignedMemoryAccess {
                             access: MemoryAccess::Load,
                             addr,
                             required: 4,
-                        });
+                        }
+                        .into());
                     }
                     // TODO: Not sure if this is how the spec defines the
                     // "reservation set" for lr/sc
-                    self.amo_rsv = Some(self.mem.pointer(addr));
-                    reg!(lr_w.rd(), self.mem.load::<u32>(addr));
+                    self.amo_rsv = Some(addr);
+                    reg!(lr_w.rd(), mem.load::<u32>(addr));
                 }
                 Rv32a::ScW(sc_w) => {
                     let addr = reg!(sc_w.rs1());
                     if addr & 3 != 0 {
-                        return Err(VmError::UnalignedMemoryAccess {
+                        return Err(MemoryError::UnalignedMemoryAccess {
                             access: MemoryAccess::Store,
                             addr,
                             required: 4,
-                        });
+                        }
+                        .into());
                     }
-                    if self.amo_rsv.take() == Some(self.mem.pointer(addr)) {
-                        self.mem.store::<u32>(addr, reg!(sc_w.rs2()));
+                    if self.amo_rsv.take() == Some(addr) {
+                        mem.store::<u32>(addr, reg!(sc_w.rs2()));
                         reg!(sc_w.rd(), 0);
                     } else {
                         reg!(sc_w.rd(), 1);
@@ -382,11 +390,11 @@ impl Hart32 {
                 }
                 Rv32c::CLw(lw) => {
                     let addr = reg!(lw.rs1()).wrapping_add(lw.imm());
-                    reg!(lw.rd(), self.mem.load::<u32>(addr));
+                    reg!(lw.rd(), mem.load::<u32>(addr));
                 }
                 Rv32c::CSw(sw) => {
                     let addr = reg!(sw.rs1()).wrapping_add(sw.imm());
-                    self.mem.store::<u32>(addr, reg!(sw.rs2()));
+                    mem.store::<u32>(addr, reg!(sw.rs2()));
                 }
                 Rv32c::CAddi(caddi) => {
                     let rs1rd = caddi.rs1rd();
@@ -399,11 +407,11 @@ impl Hart32 {
                 }
                 Rv32c::CLwsp(lwsp) => {
                     let addr = reg!(Reg::Sp).wrapping_add(lwsp.imm());
-                    reg!(lwsp.rd(), self.mem.load::<u32>(addr));
+                    reg!(lwsp.rd(), mem.load::<u32>(addr));
                 }
                 Rv32c::CSwsp(swsp) => {
                     let addr = reg!(Reg::Sp).wrapping_add(swsp.imm());
-                    self.mem.store::<u32>(addr, reg!(swsp.rs2()));
+                    mem.store::<u32>(addr, reg!(swsp.rs2()));
                 }
                 Rv32c::CNop(_) => {}
                 Rv32c::CJal(cjal) => {
@@ -465,10 +473,10 @@ impl Hart32 {
                     next_pc = reg!(cjr.rs1());
                 }
                 Rv32c::CMv(cmv) => reg!(cmv.rd(), reg!(cmv.rs2())),
-                Rv32c::CEbreak(_) => {
-                    self.running = false;
-                    self.exit_code = 1;
-                }
+                Rv32c::CEbreak(_) => match kernel.ebreak(self, mem)? {
+                    StepResult::Ok => {}
+                    res => return Ok(res),
+                },
                 Rv32c::CJalr(cjalr) => {
                     reg!(Reg::Ra, next_pc);
                     next_pc = reg!(cjalr.rs1());
@@ -477,133 +485,19 @@ impl Hart32 {
                     let rs1rd = cadd.rs1rd();
                     reg!(rs1rd, reg!(rs1rd).wrapping_add(reg!(cadd.rs2())));
                 }
-                Rv32c::CUnimp(_) => return Err(VmError::IllegalInstruction { addr: self.pc, op }),
+                Rv32c::CUnimp(_) => {
+                    return Err(HartError::IllegalInstruction { addr: self.pc, op }.into())
+                }
             },
             _ => {
-                return Err(VmError::UnimplementedInstruction { addr: self.pc, op });
+                return Err(HartError::UnimplementedInstruction { addr: self.pc, op }.into());
             }
         }
 
         self.inst_count += 1;
         self.pc = next_pc;
 
-        Ok((inst, op))
-    }
-
-    pub fn run(&mut self, _elf: goblin::elf::Elf) -> Result<i32, VmError> {
-        while self.running {
-            self.step()?;
-        }
-
-        Ok(self.exit_code)
-    }
-
-    pub fn syscall(&mut self) {
-        let call = self.get_reg(Reg::A7);
-        let parsed = syscalls::riscv32::Sysno::new(call as usize);
-        tracing::debug!("0x{:08x}: SYSTEM({call}) -> {parsed:?}", self.pc);
-
-        macro_rules! syscall {
-                ($syscall:ident(
-                    $($ty:ident $arg:ident),*
-                )) => {{
-                    syscall!(
-                        @fetch_regs,
-                        10,
-                        $($ty, $arg),*
-                    );
-                    let res = crate::syscall::$syscall(self, $($arg as _),*);
-                    self.set_reg(Reg::A0, res as u32);
-                }};
-                (@fetch_regs, $counter: expr, $ty: ident, $arg:ident, $($rest_ty:ident, $rest:ident),+) => {
-                    let $arg = self.get_reg(Reg::checked_from($counter).unwrap());
-                    syscall!(@arg, $ty, $arg);
-                    syscall!(@fetch_regs, $counter + 1, $($rest_ty, $rest),*);
-                };
-                (@fetch_regs, $counter: expr, $ty: ident, $arg:ident) => {
-                    let $arg = self.get_reg(Reg::checked_from($counter).unwrap());
-                    syscall!(@arg, $ty, $arg);
-                };
-                (@fetch_regs, $counter: expr,) => {};
-                (@arg, ptr, $arg:ident) => {
-                    let $arg = self.mem.pointer($arg);
-                };
-                (@arg, val, $arg:ident) => {};
-            }
-
-        match call {
-            // ioctl(int fd, unsigned long request, ...)
-            29 => syscall!(ioctl(val fd, val request)),
-            // write(int fd, const void* buf, size_t count)
-            64 => syscall!(write(val fd, ptr buf, val count)),
-            // writev(int fd, const struct iovec* iov, int iovcnt)
-            66 => syscall!(writev(val fd, ptr iov, val iovcnt)),
-            // readlinkat(int dirfd, const char* pathname, char* buf, size_t bufsiz)
-            78 => syscall!(readlinkat(val dirfd, ptr pathname, ptr buf, val bufsiz)),
-            // exit(int status)
-            93 => syscall!(exit(val status)),
-            // exit_group(int status)
-            94 => syscall!(exit_group(val status)),
-            // set_tid_address(int* tidptr)
-            96 => syscall!(set_tid_address(ptr tidptr)),
-            // futex shouldn't be used, but seems like rust's libc uses it on riscv32
-            // See:
-            //  https://github.com/kraj/musl/blob/eb4309b142bb7a8bdc839ef1faf18811b9ff31c8/src/internal/syscall.h#L316
-            //  https://github.com/rust-lang/libc/blob/0f9f8c91adb0365c0d13b34ec27ac8019818cf1f/src/unix/linux_like/linux/musl/b32/riscv32/mod.rs#L504
-            98 => {
-                syscall!(futex(ptr uaddr, val futex_op, val val, ptr timeout, ptr uaddr2, val val3))
-            }
-            // set_robust_list(struct robust_list_head* head, size_t len)
-            99 => syscall!(set_robust_list(ptr head, val len)),
-            // tgkill(int tgid, int tid, int sig)
-            131 => syscall!(tgkill(val tgid, val tid, val sig)),
-            // rt_sigaction(int signum, const struct sigaction* act, struct sigaction* oldact, size_t sigsetsize)
-            134 => syscall!(rt_sigaction(val signum, ptr act, ptr oldact, val sigsetsize)),
-            // rt_sigprocmask(int how, const sigset_t* set, sigset_t* oldset, size_t sigsetsize)
-            135 => syscall!(rt_sigprocmask(val how, ptr set, ptr oldset, val sigsetsize)),
-            // getpid()
-            172 => syscall!(getpid()),
-            // gettid()
-            178 => syscall!(gettid()),
-            // brk(void* addr)
-            214 => {
-                // self.debug = true;
-                syscall!(brk(ptr addr))
-            }
-            // mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
-            222 => {
-                syscall!(mmap(val addr, val length, val prot, val flags, val fd, val offset))
-            }
-            // mprotect(void* addr, size_t len, int prot)
-            226 => syscall!(mprotect(ptr addr, val len, val prot)),
-            // riscv_hwprobe(struct riscv_hwprobe* pairs, size_t pair_count,
-            //               size_t cpusetsize, cpu_set_t *cpus,
-            //               unsigned int flags)
-            258 => {
-                syscall!(riscv_hwprobe(ptr pairs, val pair_count, val cpusetsize, ptr cpus, val flags))
-            }
-            // getrlimit(int resource, struct rlimit* rlim)
-            261 => syscall!(getrlimit(val resource, ptr rlim)),
-            // getrandom(void* buf, size_t buflen, uint flags)
-            278 => syscall!(getrandom(ptr buf, val buflen, val flags)),
-            // statx
-            291 => {
-                syscall!(statx(val dirfd, ptr pathname, val flags, val mask, ptr statxbuf))
-            }
-            //ppoll
-            414 => {
-                syscall!(ppoll(ptr fds, val nfds, ptr timeout_ts, ptr sigmask, val sigsetsize))
-            }
-            // futex_time64(int* uaddr, int futex_op, int val, size_t timeout, int* uaddr2, int val3)
-            422 => {
-                syscall!(futex(ptr uaddr, val futex_op, val val, ptr timeout, ptr uaddr2, val val3))
-            }
-            _ => {
-                tracing::error!("SYSTEM({call}) -> {parsed:?} is unimplemented");
-                self.running = false;
-                self.exit_code = 1;
-            }
-        }
+        Ok(StepResult::Ok)
     }
 }
 

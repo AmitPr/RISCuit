@@ -1,7 +1,11 @@
-use std::{collections::BTreeMap, ffi::CString};
+use std::collections::BTreeMap;
 
 use clap::Parser;
-use riscv_vm::{cpu::Hart32, elf::load_elf, initialize::setup_stack, riscv_inst::Reg};
+use riscv_kernel_linux::MockLinux;
+use riscv_vm::{
+    machine::{Machine, MachineState},
+    riscv_inst::Reg,
+};
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -27,16 +31,17 @@ fn main() {
         .init();
 
     let args = Args::parse();
-
-    let mut cpu = Hart32::new();
     let elf = std::fs::read(&args.elf_path).expect("Failed to read ELF file");
-    let elf = load_elf(&mut cpu, &elf);
 
-    let filename = CString::new(args.elf_path.split('/').last().unwrap())
-        .expect("Failed to convert filename to CString");
-    setup_stack(&mut cpu, &[filename.as_c_str()], &[]);
+    let filename = args.elf_path.split('/').last().unwrap();
 
-    let mut debugger = Debugger::new(cpu, elf, args.breakpoints);
+    let mut machine = Machine::new(MockLinux::default());
+    let elf =
+        machine
+            .kernel
+            .load_static_elf(&mut machine.hart, &mut machine.mem, &elf, &[filename], &[]);
+
+    let mut debugger = Debugger::new(machine, elf, args.breakpoints);
 
     debugger.run();
 }
@@ -47,7 +52,7 @@ enum Mode {
 }
 
 struct Debugger {
-    cpu: Hart32,
+    machine: Machine<MockLinux>,
     mode: Mode,
     syms: BTreeMap<u32, String>,
     last_sym: Option<String>,
@@ -55,7 +60,7 @@ struct Debugger {
 }
 
 impl Debugger {
-    pub fn new(cpu: Hart32, elf: goblin::elf::Elf, breakpoints: Vec<u32>) -> Self {
+    pub fn new(machine: Machine<MockLinux>, elf: goblin::elf::Elf, breakpoints: Vec<u32>) -> Self {
         let syms = elf
             .syms
             .iter()
@@ -71,7 +76,7 @@ impl Debugger {
             .collect();
 
         Self {
-            cpu,
+            machine,
             mode: Mode::Running,
             syms,
             last_sym: None,
@@ -80,12 +85,13 @@ impl Debugger {
     }
 
     pub fn run(&mut self) {
-        while self.cpu.running {
-            if let Some((pc, sym)) = self.syms.range(..=self.cpu.pc).next_back() {
+        while self.machine.state.is_running() {
+            if let Some((pc, sym)) = self.syms.range(..=self.machine.hart.pc).next_back() {
                 if self.last_sym.as_deref() != Some(sym) {
-                    if self.cpu.pc == *pc {
+                    if self.machine.hart.pc == *pc {
                         let reg_state = self
-                            .cpu
+                            .machine
+                            .hart
                             .regs_range(Reg::A0, Reg::A7)
                             .map(|(r, v)| format!("{r:?}=0x{v:x}"))
                             .collect::<Vec<_>>()
@@ -97,10 +103,10 @@ impl Debugger {
                     self.last_sym = Some(sym.clone());
                 }
             }
-            self.cpu.step().expect("Failed to step");
+            self.machine.step().expect("Failed to step");
 
-            if self.breakpoints.contains(&self.cpu.pc) {
-                tracing::info!("Breakpoint hit at 0x{:08x}", self.cpu.pc);
+            if self.breakpoints.contains(&self.machine.hart.pc) {
+                tracing::info!("Breakpoint hit at 0x{:08x}", self.machine.hart.pc);
                 self.mode = Mode::Debugging;
             }
 
@@ -124,12 +130,12 @@ impl Debugger {
                             break;
                         }
                         Some("r") => {
-                            for (reg, val) in self.cpu.regs() {
+                            for (reg, val) in self.machine.hart.regs() {
                                 tracing::info!("{:?}: 0x{:08x}", reg, val);
                             }
                         }
                         Some("q") => {
-                            self.cpu.running = false;
+                            self.machine.state = MachineState::Halted;
                             break;
                         }
                         Some("lw") => {
@@ -144,7 +150,7 @@ impl Debugger {
                                 continue;
                             }
                             let addr = addr.unwrap();
-                            let val = self.cpu.mem.load::<u32>(addr);
+                            let val = self.machine.mem.load::<u32>(addr);
                             tracing::info!("0x{:08x}: 0x{:08x}", addr, val);
                         }
                         _ => tracing::info!("Unknown command"),
@@ -153,6 +159,6 @@ impl Debugger {
             }
         }
 
-        tracing::info!("Instructions executed: {}", self.cpu.inst_count);
+        tracing::info!("Instructions executed: {}", self.machine.hart.inst_count);
     }
 }

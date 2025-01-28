@@ -12,6 +12,8 @@ use std::{ffi::CStr, marker::PhantomData};
 
 use goblin::pe::import::Bitfield;
 
+use crate::error::{MemoryAccess, MemoryError};
+
 pub const PAGE_SIZE: usize = 4096;
 pub const MEMORY_SIZE: usize = const {
     // Assert that usize > u32.
@@ -55,18 +57,59 @@ impl Memory {
     }
 
     pub fn load<T: Primitive>(&self, addr: u32) -> T {
+        // Safety: Primitive types are guaranteed not to overflow the address space,
+        // where `addr + size_of::<T>()` is guaranteed to be < `MEMORY_SIZE`.
         unsafe { (self.ptr.add(addr as usize) as *const T).read_unaligned() }
     }
 
     pub fn store<T: Primitive>(&mut self, addr: u32, val: T) {
+        // Safety: Primitive types are guaranteed not to overflow the address space,
+        // where `addr + size_of::<T>()` is guaranteed to be < `MEMORY_SIZE`.
         unsafe {
             (self.ptr.add(addr as usize) as *mut T).write_unaligned(val);
         }
         tracing::trace!("Store at {:#x}", addr);
     }
 
-    pub fn pointer<T: ?Sized>(&self, addr: u32) -> GuestPtr<T> {
-        GuestPtr::new(self.ptr, addr)
+    pub const fn ptr(&self, addr: u32) -> *const u8 {
+        unsafe { self.ptr.add(addr as usize) }
+    }
+
+    pub const fn ptr_mut(&mut self, addr: u32) -> *mut u8 {
+        unsafe { self.ptr.add(addr as usize) }
+    }
+
+    pub fn slice<T: Sized>(&self, addr: u32, len: u32) -> Result<&[T], MemoryError> {
+        let _len_bytes = len
+            .checked_mul(std::mem::size_of::<T>() as u32)
+            .and_then(|l| l.checked_add(addr))
+            .ok_or(MemoryError::OverflowMemoryAccess {
+                access: MemoryAccess::Load,
+                addr,
+                len: len * std::mem::size_of::<T>() as u32,
+            })?;
+        Ok(unsafe { std::slice::from_raw_parts(self.ptr(addr) as *const T, len as usize) })
+    }
+
+    pub fn bytes_null_terminated(
+        &self,
+        addr: u32,
+        max_len: Option<u32>,
+    ) -> Result<&[u8], MemoryError> {
+        let max = max_len
+            .map_or(Some(u32::MAX), |m| addr.checked_add(m))
+            .ok_or(MemoryError::OverflowMemoryAccess {
+                access: MemoryAccess::Load,
+                addr,
+                len: max_len.unwrap(),
+            })?;
+
+        let mut cur = addr;
+        while cur < max && self.load::<u8>(cur) != 0 {
+            cur += 1;
+        }
+
+        self.slice(addr, cur - addr)
     }
 
     pub fn host_to_guest_ptr<T>(&self, ptr: *const u8) -> Option<GuestPtr<T>> {
@@ -76,6 +119,37 @@ impl Memory {
             .ok()?;
 
         Some(GuestPtr::new(self.ptr, offset))
+    }
+
+    pub fn copy_to<T>(&mut self, dst: u32, src: &[T]) -> Result<(), MemoryError> {
+        if dst.checked_add(std::mem::size_of_val(src) as u32).is_none() {
+            Err(MemoryError::OverflowMemoryAccess {
+                access: MemoryAccess::Store,
+                addr: dst,
+                len: std::mem::size_of_val(src) as u32,
+            })
+        } else {
+            unsafe {
+                std::ptr::copy_nonoverlapping(src.as_ptr(), self.ptr_mut(dst) as *mut T, src.len());
+            }
+
+            Ok(())
+        }
+    }
+
+    pub fn memset(&mut self, addr: u32, val: u8, len: u32) -> Result<(), MemoryError> {
+        if addr.checked_add(len).is_none() {
+            Err(MemoryError::OverflowMemoryAccess {
+                access: MemoryAccess::Store,
+                addr,
+                len,
+            })
+        } else {
+            unsafe {
+                std::ptr::write_bytes(self.ptr_mut(addr), val, len as usize);
+            }
+            Ok(())
+        }
     }
 }
 

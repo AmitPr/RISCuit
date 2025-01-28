@@ -12,3 +12,5 @@ pub use elf::*;
 
 mod futex;
 pub use futex::*;
+
+pub const RLIM_INFINITY: u32 = -1i32 as u32;

@@ -1,4 +1,5 @@
-pub const MAP_FAILED: u32 = -1i32 as u32;
+pub const MAP_FAILED: i32 = -1;
+
 pub const MAP_SHARED: u32 = 0x01;
 pub const MAP_PRIVATE: u32 = 0x02;
 pub const MAP_SHARED_VALIDATE: u32 = 0x03;

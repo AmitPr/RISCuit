@@ -1,0 +1,12 @@
+[package]
+name = "riscv-kernel-linux"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+riscv-vm.workspace = true
+goblin = "0.9.3"
+libc-riscv32.workspace = true
+syscalls = { version = "0.6.18", features = ["riscv32"] }
+tracing = "0.1.41"
+thiserror = "1.0"
