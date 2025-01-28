@@ -8,10 +8,6 @@ mod _sealed {
 }
 use _sealed::Primitive;
 
-use std::{ffi::CStr, marker::PhantomData};
-
-use goblin::pe::import::Bitfield;
-
 use crate::error::{MemoryAccess, MemoryError};
 
 pub const PAGE_SIZE: usize = 4096;
@@ -112,15 +108,6 @@ impl Memory {
         self.slice(addr, cur - addr)
     }
 
-    pub fn host_to_guest_ptr<T>(&self, ptr: *const u8) -> Option<GuestPtr<T>> {
-        let offset = (ptr as usize)
-            .checked_sub(self.ptr as usize)?
-            .try_into()
-            .ok()?;
-
-        Some(GuestPtr::new(self.ptr, offset))
-    }
-
     pub fn copy_to<T>(&mut self, dst: u32, src: &[T]) -> Result<(), MemoryError> {
         if dst.checked_add(std::mem::size_of_val(src) as u32).is_none() {
             Err(MemoryError::OverflowMemoryAccess {
@@ -164,93 +151,5 @@ impl Drop for Memory {
         unsafe {
             libc::munmap(self.ptr as *mut libc::c_void, MEMORY_SIZE);
         }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GuestPtr<T: ?Sized> {
-    /// Pointer to the base of the guest memory.
-    base: *const u8,
-    /// Offset
-    offset: u32,
-    _phantom: PhantomData<T>,
-}
-
-impl<T: ?Sized> GuestPtr<T> {
-    pub fn new(base: *const u8, offset: u32) -> Self {
-        Self {
-            base,
-            offset,
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn is_null(&self) -> bool {
-        self.offset.is_zero()
-    }
-
-    pub fn offset(&self, offset: i32) -> Self {
-        Self {
-            base: self.base,
-            offset: self.offset.wrapping_add_signed(offset),
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn as_host_ptr(&self) -> *const u8 {
-        unsafe { self.base.add(self.offset as usize) }
-    }
-
-    pub fn as_host_ptr_mut(&self) -> *mut u8 {
-        unsafe { self.base.add(self.offset as usize) as *mut u8 }
-    }
-
-    pub fn addr(&self) -> u32 {
-        self.offset
-    }
-
-    pub fn base(&self) -> *const u8 {
-        self.base
-    }
-
-    pub fn cast<U>(&self) -> GuestPtr<U> {
-        GuestPtr {
-            base: self.base,
-            offset: self.offset,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<T: Sized> GuestPtr<T> {
-    pub fn read(&self) -> T {
-        let ptr = self.as_host_ptr() as *const T;
-        unsafe { ptr.read_unaligned() }
-    }
-
-    pub fn store(&self, val: T) {
-        let ptr = self.as_host_ptr_mut() as *mut T;
-        unsafe { ptr.write_unaligned(val) }
-    }
-
-    pub fn as_typed_host_ptr(&self) -> *const T {
-        self.as_host_ptr() as *const T
-    }
-}
-
-impl GuestPtr<CStr> {
-    pub fn read(&self) -> &CStr {
-        // TODO: Prevent DoS / slowdowns from reading very large CStr
-        unsafe { CStr::from_ptr(self.as_host_ptr() as *const i8) }
-    }
-}
-
-impl<T> GuestPtr<[T]> {
-    pub fn read(&self, len: usize) -> &[T] {
-        unsafe { std::slice::from_raw_parts(self.as_host_ptr() as *const T, len) }
-    }
-
-    pub fn read_mut(&mut self, len: usize) -> &mut [T] {
-        unsafe { std::slice::from_raw_parts_mut(self.as_host_ptr_mut() as *mut T, len) }
     }
 }
