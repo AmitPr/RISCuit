@@ -64,7 +64,6 @@ impl Memory {
         unsafe {
             (self.ptr.add(addr as usize) as *mut T).write_unaligned(val);
         }
-        tracing::trace!("Store at {:#x}", addr);
     }
 
     pub const fn ptr(&self, addr: u32) -> *const u8 {

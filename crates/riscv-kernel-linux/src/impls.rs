@@ -24,11 +24,15 @@ impl MockLinux {
 
         match fd {
             1 => {
-                print!("{}", String::from_utf8_lossy(slice)); // stdout
+                if self.passthrough_stdio {
+                    print!("{}", String::from_utf8_lossy(slice)); // stdout
+                }
                 Ok(count)
             }
             2 => {
-                eprint!("{}", String::from_utf8_lossy(slice)); // stderr
+                if self.passthrough_stdio {
+                    eprint!("{}", String::from_utf8_lossy(slice)); // stderr
+                }
                 Ok(count)
             }
             _ => {
@@ -193,7 +197,7 @@ impl MockLinux {
         _sig: u32,
         _act: u32,
         _oldact: u32,
-        _sigsetsize: u32
+        _sigsetsize: u32,
     ) -> Result<u32, i32> {
         // stubbed out -- this is called w/ SIGPIPE during rust runtime startup
         Ok(0)

@@ -14,6 +14,8 @@ struct Args {
     /// Breakpoint address
     #[clap(short, value_parser = maybe_hex, num_args = 0..)]
     breakpoints: Vec<u32>,
+    #[clap(short, long, default_value_t = false)]
+    debug: bool,
 }
 
 fn maybe_hex(s: &str) -> Result<u32, std::num::ParseIntError> {
@@ -41,9 +43,13 @@ fn main() {
             .kernel
             .load_static_elf(&mut machine.hart, &mut machine.mem, &elf, &[filename], &[]);
 
-    let mut debugger = Debugger::new(machine, elf, args.breakpoints);
+    if args.debug {
+        let mut debugger = Debugger::new(machine, elf, args.breakpoints);
 
-    debugger.run();
+        debugger.run();
+    } else {
+        machine.run().expect("Failed to run");
+    }
 }
 
 enum Mode {
@@ -161,4 +167,9 @@ impl Debugger {
 
         tracing::info!("Instructions executed: {}", self.machine.hart.inst_count);
     }
+}
+
+#[inline(never)]
+pub fn parse_inst(inst: u32) -> Option<riscv_vm::riscv_inst::codegen::rv32::Rv32> {
+    riscv_vm::riscv_inst::codegen::rv32::Rv32::parse(inst)
 }

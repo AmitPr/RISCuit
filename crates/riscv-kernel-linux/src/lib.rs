@@ -22,6 +22,7 @@ pub enum LinuxError {}
 #[derive(Default, Debug)]
 pub struct MockLinux {
     exit_code: Option<u32>,
+    passthrough_stdio: bool,
 }
 
 impl Kernel for MockLinux {
@@ -118,8 +119,11 @@ impl Kernel for MockLinux {
 }
 
 impl MockLinux {
-    pub fn new() -> Self {
-        Self { exit_code: None }
+    pub fn new(passthrough_stdio: bool) -> Self {
+        Self {
+            exit_code: None,
+            passthrough_stdio,
+        }
     }
 
     pub fn exit_code(&self) -> Option<u32> {

@@ -52,7 +52,8 @@ fn main() {
             });
 
         let gen = syn::parse_quote! {
-            pub use crate::{Reg, FReg};
+            #![allow(unused_parens, clippy::unnecessary_cast, clippy::write_literal, clippy::identity_op)]
+            pub(crate) use crate::{Reg, FReg};
 
             #(#mods)*
         };
@@ -70,12 +71,13 @@ fn main() {
         .status()
         .unwrap();
 
-    // Run cargo clippy --fix --allow-dirty in the riscv-inst directory
-    std::process::Command::new("cargo")
-        .args(["clippy", "--fix", "--allow-dirty"])
-        .current_dir(wd)
-        .status()
-        .unwrap();
+    // Run cargo clippy --fix --allow-dirty in the riscv-inst directory (SLOW)
+    // Currently just #[allow]-ing the lints that are triggered
+    // std::process::Command::new("cargo")
+    //     .args(["clippy", "--fix", "--allow-dirty"])
+    //     .current_dir(wd)
+    //     .status()
+    //     .unwrap();
 }
 
 fn preprocess(spec: &str) -> Vec<Vec<String>> {
@@ -198,6 +200,7 @@ fn codegen_base_isas(isas: Vec<String>) -> Vec<(String, String)> {
             #( #imports )*
 
             #[derive(Clone, Copy, PartialEq, Eq)]
+            #[repr(u8)]
             pub enum #base_ident {
                 #(#variants)*
             }
@@ -244,7 +247,7 @@ fn generate_operand_accessor_fn(operand: &[String]) -> TokenStream {
 
     // TODO: Sign extension
     quote! {
-        #[inline]
+        #[inline(always)]
         pub const fn #fn_ident(&self) -> #operand_type {
             #accessor
         }
@@ -302,6 +305,7 @@ fn generate_isa_enum(
 
     quote! {
         #[derive(Clone, Copy, PartialEq, Eq)]
+        #[repr(u8)]
         pub enum #isa_ident {
             #(#variants(#variants)),*
         }

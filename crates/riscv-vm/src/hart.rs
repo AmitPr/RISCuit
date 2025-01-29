@@ -31,20 +31,17 @@ impl Hart32 {
     }
 
     /// Read a register. x0 is always 0 in RISC-V.
+    #[inline(always)]
     pub const fn get_reg(&self, r: Reg) -> u32 {
-        if let Reg::Zero = r {
-            0
-        } else {
-            self.regs[r as usize]
-        }
+        let idx = r as usize;
+        self.regs[if idx == 0 { 0 } else { idx }]
     }
 
     /// Write a register (except x0).
-    pub fn set_reg(&mut self, r: Reg, val: u32) {
-        if let Reg::Zero = r {
-            return;
-        }
-        self.regs[r as usize] = val;
+    #[inline(always)]
+    pub const fn set_reg(&mut self, r: Reg, val: u32) {
+        let idx = r as usize;
+        self.regs[idx] = if idx == 0 { 0 } else { val };
     }
 
     /// Dump registers to stdout
@@ -56,7 +53,6 @@ impl Hart32 {
         (start as usize..=end as usize).map(|i| (unsafe { Reg::from_u5(i as u8) }, self.regs[i]))
     }
 
-    #[inline(always)]
     pub fn step<K: Kernel>(
         &mut self,
         mem: &mut Memory,
@@ -67,7 +63,6 @@ impl Hart32 {
             addr: self.pc,
             inst,
         })?;
-        tracing::trace!("0x{:08x}:\t{inst:08x}\t{op}", self.pc);
         let inc = if matches!(op, Rv32::Rv32c(_)) { 2 } else { 4 };
 
         let mut next_pc = self.pc.wrapping_add(inc);
