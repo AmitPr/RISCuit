@@ -1,3 +1,5 @@
 /target
 riscv/*/target
 *.s
+
+.DS_Store
