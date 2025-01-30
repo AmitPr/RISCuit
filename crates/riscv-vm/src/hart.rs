@@ -64,11 +64,6 @@ impl Hart32 {
         let pc_inc = if inst & 0b11 == 0b11 { 4 } else { 2 };
         let mut next_pc = self.pc.wrapping_add(pc_inc);
 
-        // println!("{:08x}: {inst:08x} {op:?}", self.pc);
-        // if self.pc == 0x8000_0000 {
-        //     panic!("Halted at 0x8000_0000");
-        // }
-
         macro_rules! reg {
             ($reg: expr) => {
                 self.get_reg($reg)

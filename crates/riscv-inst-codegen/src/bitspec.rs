@@ -1,4 +1,6 @@
-use proc_macro2::TokenStream;
+use std::cmp::Ordering;
+
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{
     bracketed,
@@ -68,11 +70,11 @@ fn mask(width: usize, shift: usize) -> LitInt {
     let mask: u64 = mask << shift;
     let mask = format!("{:#b}", mask);
 
-    LitInt::new(&mask, proc_macro2::Span::call_site())
+    LitInt::new(&mask, Span::call_site())
 }
 
 impl Bitspec {
-    fn accessor(&self, src: TokenStream) -> TokenStream {
+    fn accessor(&self, src: &TokenStream) -> TokenStream {
         let BitRange { mut msb, .. } = &self.gather;
 
         let mut segments = Vec::with_capacity(self.scatter.len());
@@ -80,37 +82,19 @@ impl Bitspec {
             // take scatter.width() bits from gather, and place them at scatter.lsb
             let src_msb = msb;
             let dst_msb = scatter.msb;
+
+            let shamt = LitInt::new(&format!("{}", src_msb.abs_diff(dst_msb)), Span::call_site());
             let shift = match src_msb.cmp(&dst_msb) {
-                std::cmp::Ordering::Less => {
-                    // shift left
-                    let shamt = LitInt::new(
-                        &format!("{}", dst_msb - src_msb),
-                        proc_macro2::Span::call_site(),
-                    );
-                    quote! {
-                        (#src << #shamt)
-                    }
-                }
-                std::cmp::Ordering::Equal => quote! { #src },
-                std::cmp::Ordering::Greater => {
-                    // shift right
-                    let shamt = LitInt::new(
-                        &format!("{}", src_msb - dst_msb),
-                        proc_macro2::Span::call_site(),
-                    );
-                    quote! {
-                        (#src >> #shamt)
-                    }
-                }
+                Ordering::Less => quote! { (#src << #shamt) },
+                Ordering::Equal => quote! { #src },
+                Ordering::Greater => quote! { (#src >> #shamt) },
             };
-            let dst_lsb = scatter.lsb;
-            let src_mask = mask(scatter.width(), dst_lsb);
+
+            let src_mask = mask(scatter.width(), scatter.lsb);
 
             msb -= scatter.width();
 
-            segments.push(quote! {
-                (#shift & #src_mask)
-            });
+            segments.push(quote! { (#shift & #src_mask) });
         }
 
         quote! {
@@ -127,10 +111,7 @@ pub fn serialize_bitspecs(src: TokenStream, out_ty: TokenStream, bitspecs: &str)
         .into_iter()
         .collect::<Vec<_>>();
 
-    let accessors = bitspecs
-        .iter()
-        .map(|bitspec| bitspec.accessor(src.clone()))
-        .collect::<Vec<_>>();
+    let accessors = bitspecs.iter().map(|b| b.accessor(&src));
 
     let hsb = bitspecs
         .iter()
@@ -144,49 +125,30 @@ pub fn serialize_bitspecs(src: TokenStream, out_ty: TokenStream, bitspecs: &str)
     match out_ty.to_string().as_str() {
         "i32" => {
             let shamt = 31 - hsb.unwrap_or(0);
-            let shamt = LitInt::new(&format!("{}", shamt), proc_macro2::Span::call_site());
-            quote! {
-                (((#accessor) << #shamt) as i32) >> #shamt
-            }
+            let shamt = LitInt::new(&format!("{}", shamt), Span::call_site());
+            quote! { (((#accessor) << #shamt) as i32) >> #shamt }
         }
         "i64" => {
             let shamt = 63 - hsb.unwrap_or(0);
-            quote! {
-                (((#accessor) << #shamt) as i64) >> #shamt
-            }
+            quote! { (((#accessor) << #shamt) as i64) >> #shamt }
         }
         "Reg" => {
             if hsb.unwrap_or_default() > 4 {
                 panic!("Reg can only be accessed with 5 bits");
             }
-            quote! {
-                {
-                    let acc = #accessor;
-                    unsafe { Reg::from_u5(acc as u8) }
-                }
-            }
+            quote! { unsafe { Reg::from_u5((#accessor) as u8) } }
         }
         "FReg" => {
             if hsb.unwrap_or_default() > 4 {
                 panic!("FReg can only be accessed with 5 bits");
             }
-            quote! {
-                {
-                    let acc = #accessor;
-                    unsafe { FReg::from_u5(acc as u8) }
-                }
-            }
+            quote! { unsafe { FReg::from_u5((#accessor) as u8) } }
         }
         "CReg" => {
             if hsb.unwrap_or_default() > 2 {
                 panic!("CReg can only be accessed with 3 bits");
             }
-            quote! {
-                {
-                    let acc = #accessor;
-                    unsafe { Reg::from_u5(acc as u8 + 8) }
-                }
-            }
+            quote! { unsafe { Reg::from_u5((#accessor) as u8 + 8) } }
         }
         _ => accessor,
     }

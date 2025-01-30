@@ -80,14 +80,6 @@ fn main() {
         file.write_all(code.as_bytes()).unwrap();
     }
 
-    // let base_gen = codegen_base_isas(codegen.iter().map(|(isa, _)| isa.clone()).collect());
-    // for (isa, code) in &base_gen {
-    //     let out_file = out_dir.join(format!("{}.rs", isa));
-    //     let mut file = std::fs::File::create(&out_file).unwrap();
-    //     file.write_all(preamble.as_bytes()).unwrap();
-    //     file.write_all(code.as_bytes()).unwrap();
-    // }
-
     let mod_file = out_dir.join("mod.rs");
     let mut mod_file = std::fs::File::create(&mod_file).unwrap();
     let mod_code = {
@@ -134,12 +126,8 @@ fn main() {
 fn preprocess(spec: &str) -> Vec<Vec<String>> {
     spec.lines()
         .filter(|line| !line.starts_with('#'))
-        .map(|line| {
-            line.split_whitespace()
-                .map(|s| s.to_string())
-                .collect::<Vec<_>>()
-        })
-        .filter(|line| !line.is_empty())
+        .map(|line| line.split_whitespace().map(String::from).collect())
+        .filter(|line: &Vec<String>| !line.is_empty())
         .collect::<Vec<_>>()
 }
 
@@ -161,23 +149,12 @@ fn codegen() -> Vec<(String, String)> {
         })
         .collect();
 
-    let by_isa = group_by_isa(opcodes);
-    let mut gen_isas = HashMap::new();
-    for isa in ISAS_TO_GEN {
-        for (group, ops) in by_isa.iter() {
-            if isa.contains(group) {
-                gen_isas
-                    .entry(isa)
-                    .or_insert_with(Vec::new)
-                    .extend(ops.clone());
-            }
-        }
-    }
+    let gen_isas = group_by_isa(opcodes);
 
     gen_isas
         .into_iter()
         .map(|(isa, opcodes)| {
-            let isa_enum = generate_isa_enum(*isa, opcodes, &accessors);
+            let isa_enum = generate_isa_enum(isa, opcodes, &accessors);
 
             let gen = syn::parse_quote! {
                 #[allow(unused_imports)]
@@ -188,26 +165,19 @@ fn codegen() -> Vec<(String, String)> {
 
             (isa.to_string(), prettyplease::unparse(&gen))
         })
-        .collect::<Vec<_>>()
+        .collect()
 }
 
 fn generate_operand_accessor_fn(operand: &[String]) -> TokenStream {
     let fn_ident = Ident::new(&operand[3], proc_macro2::Span::call_site());
     let operand_type = match operand[2].as_str() {
-        // Argument
-        "arg" => quote!(u32),
-        // Compressed Register (is just Reg with +8)
-        "creg" => quote!(Reg),
-        // Integer Register
-        "ireg" => quote!(Reg),
-        // Floating Point Register
-        "freg" => quote!(FReg),
-        // Signed Offset
-        "offset" => quote!(i32),
-        // Sign Extended Immediate
-        "simm" => quote!(i32),
-        // Zero Extended Immediate
-        "uimm" => quote!(u32),
+        "arg" => quote!(u32),    // Argument
+        "creg" => quote!(Reg),   // Compressed Register (= Reg+8)
+        "ireg" => quote!(Reg),   // Integer Register
+        "freg" => quote!(FReg),  // FP Register
+        "offset" => quote!(i32), // Signed Offset
+        "simm" => quote!(i32),   // Sign Extended Immediate
+        "uimm" => quote!(u32),   // Zero Extended Immediate
         _ => panic!("Unknown operand type: {}", operand[2]),
     };
     // Signal to bitspec to +8 this register
@@ -227,16 +197,26 @@ fn generate_operand_accessor_fn(operand: &[String]) -> TokenStream {
     }
 }
 
-fn group_by_isa(opcodes: Vec<Opcode>) -> HashMap<String, Vec<Opcode>> {
-    let mut isas = HashMap::new();
+fn group_by_isa(opcodes: Vec<Opcode>) -> HashMap<Isa, Vec<Opcode>> {
+    // First, group by extension
+    let mut by_ext: HashMap<String, Vec<Opcode>> = HashMap::new();
     for opcode in opcodes {
         for isa in &opcode.isas {
-            let isa = isas.entry(isa.clone()).or_insert_with(Vec::new);
-            isa.push(opcode.clone());
+            by_ext.entry(isa.clone()).or_default().push(opcode.clone());
         }
     }
 
-    isas
+    // Then combine extensions into each ISA.
+    let mut gen_isas: HashMap<Isa, Vec<Opcode>> = HashMap::new();
+    for isa in ISAS_TO_GEN {
+        for (group, ops) in by_ext.iter() {
+            if isa.contains(group) {
+                gen_isas.entry(*isa).or_default().extend(ops.clone());
+            }
+        }
+    }
+
+    gen_isas
 }
 
 fn generate_isa_enum(
@@ -246,10 +226,8 @@ fn generate_isa_enum(
 ) -> TokenStream {
     let isa_ident = isa.ident();
 
-    let variants = opcodes
-        .iter()
-        .map(|opcode| opcode.name_ident())
-        .collect::<Vec<_>>();
+    let variants = opcodes.iter().map(Opcode::as_variant).collect::<Vec<_>>();
+    let names = opcodes.iter().map(Opcode::name_ident).collect::<Vec<_>>();
 
     let opcode_structs = opcodes
         .iter()
@@ -260,7 +238,7 @@ fn generate_isa_enum(
             impl std::fmt::Debug for #isa_ident {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     match self {
-                        #( #isa_ident::#variants(inst) => write!(f, "{inst:?}") ),*
+                        #( #isa_ident::#names(inst) => write!(f, "{inst:?}") ),*
                     }
                 }
             }
@@ -268,7 +246,7 @@ fn generate_isa_enum(
             impl std::fmt::Display for #isa_ident {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     match self {
-                        #( #isa_ident::#variants(inst) => write!(f, "{inst}") ),*
+                        #( #isa_ident::#names(inst) => write!(f, "{inst}") ),*
                     }
                 }
             }
@@ -281,7 +259,7 @@ fn generate_isa_enum(
         #[derive(Clone, Copy, PartialEq, Eq)]
         #[repr(u8)]
         pub enum #isa_ident {
-            #(#variants(#variants)),*
+            #(#variants),*
         }
 
         impl #isa_ident {

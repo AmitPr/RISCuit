@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
-use syn::Ident;
+use syn::{Ident, LitInt};
 
 use crate::isa::Isa;
 
@@ -15,12 +15,13 @@ pub struct BitEnc {
 }
 
 impl BitEnc {
-    pub fn parse(spec: String) -> Option<Self> {
-        let mut parts = spec.split('=');
+    pub fn parse(spec: impl AsRef<str>) -> Option<Self> {
+        let mut parts = spec.as_ref().split('=');
         let mut range = parts.next().unwrap().split("..");
-        let end = range.next().unwrap().parse::<usize>().unwrap();
-        let start = range.next().map_or(end, |end| end.parse().unwrap());
+        let end = range.next().unwrap().parse::<usize>().unwrap(); // First
+        let start = range.next().map_or(end, |end| end.parse().unwrap()); // Maybe second
 
+        // "ignore" in some specs e.g. 14..2=ignore
         let value = parts.next().unwrap();
         if value == "ignore" {
             None
@@ -39,6 +40,7 @@ impl BitEnc {
         self.start == start && self.end == end
     }
 
+    /// Code for extracting this range to bottom bits
     pub fn codegen_extract(&self, src: Ident) -> TokenStream {
         let mask = crate::mask(self.end - self.start + 1, 0);
         let shift = self.start;
@@ -59,6 +61,7 @@ pub struct Opcode {
     #[allow(unused)]
     pub codec: String,
     pub isas: Vec<String>,
+    pub discriminant: Option<u8>,
 }
 
 impl Opcode {
@@ -66,6 +69,8 @@ impl Opcode {
         let name = args[0].clone();
         let mut isas = vec![];
         let mut codec = None;
+
+        // Last arguments are ISAs, then codec
         while let Some(arg) = args.pop() {
             if arg.starts_with("rv") {
                 isas.push(arg);
@@ -78,14 +83,13 @@ impl Opcode {
 
         let operands = args[1..]
             .iter()
-            .filter(|&arg| arg.chars().next().map_or(false, |c| c.is_alphabetic()))
+            .filter(|arg| arg.chars().next().map_or(false, char::is_alphabetic))
             .cloned()
             .collect();
 
         let encodings = args[1..]
             .iter()
-            .filter(|&arg| arg.chars().next().map_or(false, |c| c.is_numeric()))
-            .cloned()
+            .filter(|arg| arg.chars().next().map_or(false, char::is_numeric))
             .filter_map(BitEnc::parse)
             .collect();
 
@@ -95,6 +99,7 @@ impl Opcode {
             encodings,
             codec,
             isas,
+            discriminant: None,
         }
     }
 
@@ -111,22 +116,15 @@ impl Opcode {
             })
             .collect::<String>();
 
-        syn::Ident::new(&opcode, proc_macro2::Span::call_site())
+        Ident::new(&opcode, Span::call_site())
     }
 
     pub fn codegen_struct(&self, accessors: &HashMap<String, (Ident, TokenStream)>) -> TokenStream {
         let opcode_ident = self.name_ident();
-        let operand_accessors = self
+        let acessor_impls = self
             .operands
             .iter()
-            .map(|operand| {
-                &accessors
-                    .get(operand)
-                    .unwrap_or_else(|| {
-                        panic!("Failed to find accessor for operand '{}'", operand);
-                    })
-                    .1
-            })
+            .map(|operand| &accessors.get(operand).expect("Failed to find accessor").1)
             .collect::<Vec<_>>();
         let operand_inner_ty = if self.is_c() {
             quote! { pub u16 }
@@ -136,17 +134,10 @@ impl Opcode {
 
         let impls = {
             let name = &self.name;
-            let operand_accessors = self
+            let accessor_idents = self
                 .operands
                 .iter()
-                .map(|operand| {
-                    &accessors
-                        .get(operand)
-                        .unwrap_or_else(|| {
-                            panic!("Failed to find accessor for operand '{}'", operand);
-                        })
-                        .0
-                })
+                .map(|operand| &accessors.get(operand).expect("Failed to find accessor").0)
                 .collect::<Vec<_>>();
 
             quote! {
@@ -154,7 +145,7 @@ impl Opcode {
                     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                         f.debug_struct(stringify!(#name))
                             .field("inst", &self.0)
-                            #( .field(stringify!(#operand_accessors), &self.#operand_accessors()) )*
+                            #( .field(stringify!(#accessor_idents), &self.#accessor_idents()) )*
                             .finish()
                     }
                 }
@@ -162,7 +153,7 @@ impl Opcode {
                 impl std::fmt::Display for #opcode_ident {
                     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                         write!(f, "{}", #name)?;
-                        #(write!(f, " {:?}", self.#operand_accessors())?;)*
+                        #(write!(f, " {:?}", self.#accessor_idents())?;)*
                         Ok(())
                     }
                 }
@@ -174,7 +165,7 @@ impl Opcode {
             pub struct #opcode_ident(#operand_inner_ty);
 
             impl #opcode_ident {
-                #(#operand_accessors)*
+                #(#acessor_impls)*
             }
 
             #impls
@@ -186,6 +177,16 @@ impl Opcode {
         let isa_ident = isa.ident();
 
         quote! { #isa_ident::#ident(#ident(#src as _)) }
+    }
+
+    pub fn as_variant(&self) -> TokenStream {
+        let name = self.name_ident();
+        if let Some(d) = self.discriminant {
+            let d = LitInt::new(&format!("{}", d), Span::call_site());
+            quote! { #name(#name) = #d }
+        } else {
+            quote! { #name(#name) }
+        }
     }
 
     pub fn is_c(&self) -> bool {

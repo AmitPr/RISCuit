@@ -168,8 +168,3 @@ impl Debugger {
         tracing::info!("Instructions executed: {}", self.machine.hart.inst_count);
     }
 }
-
-#[inline(never)]
-pub fn parse_inst(inst: u32) -> Option<riscv_vm::riscv_inst::codegen::rv32imasc::Rv32IMASC> {
-    riscv_vm::riscv_inst::codegen::rv32imasc::Rv32IMASC::parse(inst)
-}

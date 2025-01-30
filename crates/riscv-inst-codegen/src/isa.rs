@@ -53,7 +53,7 @@ impl RvExt {
             RvExt::S => "s",
             RvExt::F(FExt::F) => "f",
             RvExt::F(FExt::D) => "fd",
-            RvExt::F(FExt::Q) => "fqq",
+            RvExt::F(FExt::Q) => "fdq",
         }
     }
 
@@ -101,10 +101,6 @@ impl Isa {
 
     pub fn contains_op(&self, op: Opcode) -> bool {
         op.isas.iter().any(|isa| self.contains(isa))
-    }
-
-    pub fn is_c(&self) -> bool {
-        self.exts.contains(&RvExt::C)
     }
 
     pub fn ident(&self) -> Ident {
