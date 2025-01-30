@@ -1,15 +1,66 @@
-use std::{collections::HashMap, io::Write, path::Path};
+mod bitspec;
+mod isa;
+mod r#match;
+mod opcode;
 
-use riscv_inst_codegen::{generate_opcode_parser, isa_ident, serialize_bitspecs, Opcode};
+pub use {bitspec::*, isa::*, opcode::*, r#match::*};
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::Ident;
+use syn::{Ident, LitInt};
+
+use std::{collections::HashMap, io::Write, path::Path};
+
+pub fn mask(width: usize, shift: usize) -> LitInt {
+    let mask: u64 = (1 << width) - 1;
+    let mask: u64 = mask << shift;
+    let mask = format!("{:#b}", mask);
+
+    LitInt::new(&mask, proc_macro2::Span::call_site())
+}
 
 const RISCV_OPERANDS: &str = include_str!("../riscv-meta/operands");
 const RISCV_OPCODES: &str = include_str!("../riscv-meta/opcodes");
 
 const PKG_DIR: &str = env!("CARGO_MANIFEST_DIR");
+
+macro_rules! isa {
+    (@ext F) => {
+        RvExt::F(FExt::F)
+    };
+    (@ext D) => {
+        RvExt::F(FExt::D)
+    };
+    (@ext Q) => {
+        RvExt::F(FExt::Q)
+    };
+    (@ext $ext:ident) => {
+        RvExt::$ext
+    };
+    ($base:ident, $($ext:ident),*) => {
+        Isa::new(Base::$base, &[$(isa!(@ext $ext)),*])
+    };
+
+}
+
+const ISAS_TO_GEN: &[Isa] = &[
+    isa!(RV32,),
+    isa!(RV32, M),
+    isa!(RV32, M, C),
+    isa!(RV32, M, A, C),
+    isa!(RV32, M, A, S, C),
+    isa!(RV32, M, A, S, F, C),
+    isa!(RV32, M, A, S, D, C),
+    isa!(RV32, M, A, S, Q, C),
+    isa!(RV64,),
+    isa!(RV64, M),
+    isa!(RV64, M, C),
+    isa!(RV64, M, A, C),
+    isa!(RV64, M, A, S, C),
+    isa!(RV64, M, A, S, F, C),
+    isa!(RV64, M, A, S, D, C),
+    isa!(RV64, M, A, S, Q, C),
+];
 
 fn main() {
     let codegen = codegen();
@@ -29,13 +80,13 @@ fn main() {
         file.write_all(code.as_bytes()).unwrap();
     }
 
-    let base_gen = codegen_base_isas(codegen.iter().map(|(isa, _)| isa.clone()).collect());
-    for (isa, code) in &base_gen {
-        let out_file = out_dir.join(format!("{}.rs", isa));
-        let mut file = std::fs::File::create(&out_file).unwrap();
-        file.write_all(preamble.as_bytes()).unwrap();
-        file.write_all(code.as_bytes()).unwrap();
-    }
+    // let base_gen = codegen_base_isas(codegen.iter().map(|(isa, _)| isa.clone()).collect());
+    // for (isa, code) in &base_gen {
+    //     let out_file = out_dir.join(format!("{}.rs", isa));
+    //     let mut file = std::fs::File::create(&out_file).unwrap();
+    //     file.write_all(preamble.as_bytes()).unwrap();
+    //     file.write_all(code.as_bytes()).unwrap();
+    // }
 
     let mod_file = out_dir.join("mod.rs");
     let mut mod_file = std::fs::File::create(&mod_file).unwrap();
@@ -43,7 +94,7 @@ fn main() {
         let mods = codegen
             .iter()
             .map(|(isa, _)| isa)
-            .chain(base_gen.iter().map(|(isa, _)| isa))
+            // .chain(base_gen.iter().map(|(isa, _)| isa))
             .map(|isa| {
                 let mod_name = Ident::new(isa, proc_macro2::Span::call_site());
                 quote! {
@@ -111,11 +162,22 @@ fn codegen() -> Vec<(String, String)> {
         .collect();
 
     let by_isa = group_by_isa(opcodes);
+    let mut gen_isas = HashMap::new();
+    for isa in ISAS_TO_GEN {
+        for (group, ops) in by_isa.iter() {
+            if isa.contains(group) {
+                gen_isas
+                    .entry(isa)
+                    .or_insert_with(Vec::new)
+                    .extend(ops.clone());
+            }
+        }
+    }
 
-    by_isa
+    gen_isas
         .into_iter()
         .map(|(isa, opcodes)| {
-            let isa_enum = generate_isa_enum(isa.clone(), opcodes, &accessors);
+            let isa_enum = generate_isa_enum(*isa, opcodes, &accessors);
 
             let gen = syn::parse_quote! {
                 #[allow(unused_imports)]
@@ -124,98 +186,9 @@ fn codegen() -> Vec<(String, String)> {
                 #isa_enum
             };
 
-            (isa, prettyplease::unparse(&gen))
+            (isa.to_string(), prettyplease::unparse(&gen))
         })
         .collect::<Vec<_>>()
-}
-
-fn codegen_base_isas(isas: Vec<String>) -> Vec<(String, String)> {
-    let opcodes = preprocess(RISCV_OPCODES)
-        .into_iter()
-        .map(Opcode::parse)
-        .collect::<Vec<_>>();
-
-    let mut results = Vec::new();
-    for base in ["rv32", "rv64"] {
-        let relevant_isas = isas.iter().filter(|isa| isa.contains(base));
-        let filtered = opcodes
-            .clone()
-            .into_iter()
-            .filter(|opcode| opcode.isas.iter().any(|isa| isa.contains(base)))
-            .collect::<Vec<_>>();
-        let decode_fn = generate_opcode_parser(filtered, base.to_string());
-
-        let base_ident = isa_ident(base);
-        let variants = relevant_isas.clone().map(|isa| {
-            let isa_ident = isa_ident(isa);
-            quote! {
-                #isa_ident(#isa_ident),
-            }
-        });
-
-        let imports = relevant_isas
-            .clone()
-            .map(|isa| {
-                let isa_mod = Ident::new(isa, proc_macro2::Span::call_site());
-                quote! {
-                    pub use super::#isa_mod::*;
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let idents = relevant_isas
-            .clone()
-            .map(|isa| isa_ident(isa))
-            .collect::<Vec<_>>();
-
-        let impls = {
-            quote! {
-                #(
-                    impl From<#idents> for #base_ident {
-                        fn from(inst: #idents) -> Self {
-                            #base_ident::#idents(inst)
-                        }
-                    }
-                )*
-
-                impl std::fmt::Debug for #base_ident {
-                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                        match self {
-                            #( #base_ident::#idents(inst) => write!(f, "{inst:?}") ),*
-                        }
-                    }
-                }
-
-                impl std::fmt::Display for #base_ident {
-                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                        match self {
-                            #( #base_ident::#idents(inst) => write!(f, "{inst}") ),*
-                        }
-                    }
-                }
-            }
-        };
-
-        let gen = syn::parse_quote! {
-            #( #imports )*
-
-            #[derive(Clone, Copy, PartialEq, Eq)]
-            #[repr(u8)]
-            pub enum #base_ident {
-                #(#variants)*
-            }
-
-            impl #base_ident {
-                #decode_fn
-            }
-
-            #impls
-        };
-
-        results.push((base.to_string(), prettyplease::unparse(&gen)));
-    }
-
-    results
 }
 
 fn generate_operand_accessor_fn(operand: &[String]) -> TokenStream {
@@ -267,12 +240,11 @@ fn group_by_isa(opcodes: Vec<Opcode>) -> HashMap<String, Vec<Opcode>> {
 }
 
 fn generate_isa_enum(
-    isa: String,
+    isa: Isa,
     opcodes: Vec<Opcode>,
     accessors: &HashMap<String, (Ident, TokenStream)>,
 ) -> TokenStream {
-    let rv_c = isa.contains("c");
-    let isa_ident = isa_ident(&isa);
+    let isa_ident = isa.ident();
 
     let variants = opcodes
         .iter()
@@ -281,7 +253,7 @@ fn generate_isa_enum(
 
     let opcode_structs = opcodes
         .iter()
-        .map(|opcode| opcode.codegen_struct(accessors, rv_c))
+        .map(|opcode| opcode.codegen_struct(accessors))
         .collect::<Vec<_>>();
 
     let impls = quote! {
@@ -303,11 +275,17 @@ fn generate_isa_enum(
 
     };
 
+    let decode_fn = generate_opcode_parser(opcodes, isa);
+
     quote! {
         #[derive(Clone, Copy, PartialEq, Eq)]
         #[repr(u8)]
         pub enum #isa_ident {
             #(#variants(#variants)),*
+        }
+
+        impl #isa_ident {
+            #decode_fn
         }
 
         #(#opcode_structs)*

@@ -4,7 +4,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::Ident;
 
-use crate::isa_ident;
+use crate::isa::Isa;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 /// Parses M..L=Val
@@ -114,11 +114,7 @@ impl Opcode {
         syn::Ident::new(&opcode, proc_macro2::Span::call_site())
     }
 
-    pub fn codegen_struct(
-        &self,
-        accessors: &HashMap<String, (Ident, TokenStream)>,
-        rv_c: bool,
-    ) -> TokenStream {
+    pub fn codegen_struct(&self, accessors: &HashMap<String, (Ident, TokenStream)>) -> TokenStream {
         let opcode_ident = self.name_ident();
         let operand_accessors = self
             .operands
@@ -132,7 +128,7 @@ impl Opcode {
                     .1
             })
             .collect::<Vec<_>>();
-        let operand_inner_ty = if rv_c {
+        let operand_inner_ty = if self.is_c() {
             quote! { pub u16 }
         } else {
             quote! { pub u32 }
@@ -185,11 +181,14 @@ impl Opcode {
         }
     }
 
-    pub fn full_instance(&self, base: &str, src: Ident) -> TokenStream {
+    pub fn full_instance(&self, isa: &Isa, src: Ident) -> TokenStream {
         let ident = self.name_ident();
-        let relevant_isa = isa_ident(self.isas.iter().find(|isa| isa.starts_with(base)).unwrap());
-        let base_ident = isa_ident(base);
+        let isa_ident = isa.ident();
 
-        quote! { #base_ident::#relevant_isa(#relevant_isa::#ident(#ident(#src as _))) }
+        quote! { #isa_ident::#ident(#ident(#src as _)) }
+    }
+
+    pub fn is_c(&self) -> bool {
+        self.isas.iter().any(|isa| isa.contains("c"))
     }
 }

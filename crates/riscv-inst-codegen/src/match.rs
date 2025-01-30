@@ -5,17 +5,17 @@ use quote::quote;
 use syn::{Ident, LitInt};
 
 use crate::{
-    isa_ident,
+    isa::Isa,
     opcode::{BitEnc, Opcode},
 };
 
-pub fn generate_opcode_parser(opcodes: Vec<Opcode>, base_isa: String) -> TokenStream {
+pub fn generate_opcode_parser(opcodes: Vec<Opcode>, isa: Isa) -> TokenStream {
     let tree = build_decision_tree(&opcodes);
-    let return_ty = isa_ident(&base_isa);
+    let return_ty = isa.ident();
     // print_tree(&tree, 0, &opcodes);
     let parser = build_match(
         Ident::new("inst", proc_macro2::Span::call_site()),
-        base_isa,
+        isa,
         &tree,
         &opcodes,
         None,
@@ -122,7 +122,7 @@ fn find_best_bit_range(
 
 fn build_match(
     src: Ident,
-    base_isa: String,
+    isa: Isa,
     cur: &DecisionNode,
     opcodes: &[Opcode],
     pattern: Option<LitInt>,
@@ -134,7 +134,7 @@ fn build_match(
             if vec.len() == 1 {
                 // Only one instruction, just return that match arm
                 let opcode = &opcodes[vec[0]];
-                let ident = opcode.full_instance(&base_isa, src.clone());
+                let ident = opcode.full_instance(&isa, src.clone());
                 quote! {
                    #pattern => Some(#ident)
                 }
@@ -158,7 +158,7 @@ fn build_match(
                         .filter(|enc| !common.contains(enc))
                         .collect::<Vec<_>>();
 
-                    let ident = op.full_instance(&base_isa, src.clone());
+                    let ident = op.full_instance(&isa, src.clone());
 
                     if unique.is_empty() {
                         arms.push(quote! { #pattern => Some(#ident) });
@@ -198,7 +198,7 @@ fn build_match(
                     proc_macro2::Span::call_site(),
                 );
 
-                build_match(src.clone(), base_isa.clone(), child, opcodes, Some(pattern))
+                build_match(src.clone(), isa, child, opcodes, Some(pattern))
             });
 
             if let Some(pattern) = pattern {

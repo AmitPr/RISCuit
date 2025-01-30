@@ -1,6 +1,5 @@
 use std::error::Error;
 
-use riscv_inst::codegen::rv32::Rv32;
 use thiserror::Error;
 
 #[derive(Debug)]
@@ -12,11 +11,23 @@ pub enum MemoryAccess {
 #[derive(Error, Debug)]
 pub enum HartError {
     #[error("Invalid instruction at address {addr:#08x}: {inst:x}")]
-    InvalidInstruction { addr: u32, inst: u32 },
-    #[error("Illegal instruction \"{op}\" at address {addr:#08x}")]
-    IllegalInstruction { addr: u32, op: Rv32 },
-    #[error("Unimplemented instruction \"{op}\" at address {addr:#08x}")]
-    UnimplementedInstruction { addr: u32, op: Rv32 },
+    InvalidInst { addr: u32, inst: u32 },
+    #[error("Illegal instruction \"0x{inst:08x}\" at address {addr:#08x}")]
+    IllegalInst { addr: u32, inst: u32 },
+    #[error("Unimplemented instruction \"0x{inst:08x}\" at address {addr:#08x}")]
+    UnimplementedInst { addr: u32, inst: u32 },
+}
+
+impl HartError {
+    pub const fn invalid(addr: u32, inst: u32) -> Self {
+        Self::InvalidInst { addr, inst }
+    }
+    pub const fn illegal(addr: u32, inst: u32) -> Self {
+        Self::IllegalInst { addr, inst }
+    }
+    pub const fn unimplemented(addr: u32, inst: u32) -> Self {
+        Self::UnimplementedInst { addr, inst }
+    }
 }
 
 #[derive(Error, Debug)]

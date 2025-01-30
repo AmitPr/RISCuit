@@ -37,7 +37,7 @@ fn main() {
 
     let filename = args.elf_path.split('/').last().unwrap();
 
-    let mut machine = Machine::new(MockLinux::default());
+    let mut machine = Machine::new(MockLinux::new(true));
     let elf =
         machine
             .kernel
@@ -170,6 +170,6 @@ impl Debugger {
 }
 
 #[inline(never)]
-pub fn parse_inst(inst: u32) -> Option<riscv_vm::riscv_inst::codegen::rv32::Rv32> {
-    riscv_vm::riscv_inst::codegen::rv32::Rv32::parse(inst)
+pub fn parse_inst(inst: u32) -> Option<riscv_vm::riscv_inst::codegen::rv32imasc::Rv32IMASC> {
+    riscv_vm::riscv_inst::codegen::rv32imasc::Rv32IMASC::parse(inst)
 }
