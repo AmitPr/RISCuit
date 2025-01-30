@@ -1,32 +1,77 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{Ident, LitInt};
 
 use crate::{
     isa::Isa,
+    lookup_tables::generate_lookup_table,
     opcode::{BitEnc, Opcode},
 };
 
-pub fn generate_opcode_parser(opcodes: Vec<Opcode>, isa: Isa) -> TokenStream {
-    let tree = build_decision_tree(&opcodes);
+pub fn generate_opcode_parser(
+    opcodes: &mut [Opcode],
+    isa: Isa,
+) -> (Option<TokenStream>, TokenStream) {
+    let (mut compressed, mut uncompressed) =
+        opcodes.iter_mut().partition::<Vec<_>, _>(|o| o.is_c());
+
+    // Assign discriminants to compressed, then uncompressed opcodes
+    let mut assigned_cunimp = false;
+    compressed
+        .iter_mut()
+        .chain(uncompressed.iter_mut())
+        .enumerate()
+        .for_each(|(i, c)| {
+            c.discriminant = if c.name == "c.unimp" {
+                assigned_cunimp = true;
+                Some(0)
+            } else {
+                let i = if assigned_cunimp { i } else { i + 1 };
+                Some(i as u8)
+            }
+        });
+
+    let table = if compressed.is_empty() {
+        None
+    } else {
+        Some(generate_lookup_table(&compressed))
+    };
+    let c_decode = if table.is_some() {
+        let include_path = format!("./{isa}_lookup_table.rs");
+        quote! {
+            const C_LOOKUP: [u8; 0xFFFF] = include!(#include_path);
+
+            #[allow(clippy::missing_transmute_annotations)]
+            Some(unsafe { core::mem::transmute(*C_LOOKUP.get_unchecked(inst as u16 as usize)) })
+        }
+    } else {
+        quote! { None }
+    };
+
+    let tree = build_decision_tree(&uncompressed);
     let return_ty = isa.ident();
-    // print_tree(&tree, 0, &opcodes);
     let parser = build_match(
         Ident::new("inst", proc_macro2::Span::call_site()),
         isa,
         &tree,
-        &opcodes,
+        &uncompressed,
         None,
     );
 
-    quote! {
+    let decode_fn = quote! {
         #[inline(always)]
-        pub const fn parse(inst: u32) -> Option<#return_ty> {
-            #parser
+        pub fn parse(inst: u32) -> Option<#return_ty> {
+            if inst & 0b11 != 0b11 {
+                #c_decode
+            } else {
+                #parser
+            }
         }
-    }
+    };
+
+    (table, decode_fn)
 }
 
 #[derive(Debug)]
@@ -38,12 +83,12 @@ enum DecisionNode {
     },
 }
 
-fn build_decision_tree(encodings: &[Opcode]) -> DecisionNode {
+fn build_decision_tree(encodings: &[&mut Opcode]) -> DecisionNode {
     let all_indices: Vec<usize> = (0..encodings.len()).collect();
     build_tree_node(encodings, &all_indices)
 }
 
-fn build_tree_node(ops: &[Opcode], indices: &[usize]) -> DecisionNode {
+fn build_tree_node(ops: &[&mut Opcode], indices: &[usize]) -> DecisionNode {
     // If we have 1 or fewer instructions, make a leaf
     if indices.len() <= 1 {
         return DecisionNode::Leaf(indices.to_vec());
@@ -89,7 +134,7 @@ fn build_tree_node(ops: &[Opcode], indices: &[usize]) -> DecisionNode {
 }
 
 fn bit_ranges(
-    opcodes: &[Opcode],
+    opcodes: &[&mut Opcode],
     indices: &[usize],
 ) -> BTreeMap<(usize, usize), (BTreeSet<u32>, usize)> {
     let mut bit_counts: BTreeMap<(usize, usize), (BTreeSet<u32>, usize)> = BTreeMap::new();
@@ -124,7 +169,7 @@ fn build_match(
     src: Ident,
     isa: Isa,
     cur: &DecisionNode,
-    opcodes: &[Opcode],
+    opcodes: &[&mut Opcode],
     pattern: Option<LitInt>,
 ) -> TokenStream {
     match cur {
@@ -134,7 +179,7 @@ fn build_match(
             if vec.len() == 1 {
                 // Only one instruction, just return that match arm
                 let opcode = &opcodes[vec[0]];
-                let ident = opcode.full_instance(&isa, src.clone());
+                let ident = opcode.full_instance(&isa);
                 quote! {
                    #pattern => Some(#ident)
                 }
@@ -158,7 +203,7 @@ fn build_match(
                         .filter(|enc| !common.contains(enc))
                         .collect::<Vec<_>>();
 
-                    let ident = op.full_instance(&isa, src.clone());
+                    let ident = op.full_instance(&isa);
 
                     if unique.is_empty() {
                         arms.push(quote! { #pattern => Some(#ident) });
@@ -184,37 +229,55 @@ fn build_match(
             bit_range: (start, end),
             children,
         } => {
-            let match_expr = BitEnc {
+            let enc = BitEnc {
                 start: *start,
                 end: *end,
                 value: 0,
-            }
-            .codegen_extract(src.clone());
+            };
+            let match_expr = enc.codegen_extract(src.clone());
 
-            let arms = children.iter().map(|(pattern, child)| {
-                let width = end - start + 1;
-                let pattern = LitInt::new(
-                    &format!("{:#0width$b}", pattern),
-                    proc_macro2::Span::call_site(),
-                );
+            // TODO: The manual "unreachable!()" + None branches seem like they should
+            // outperform, but it seems worse!
+            const EXHAUSTIVE_MATCH_THRESHOLD: usize = 0;
+            let arms = (0..(2u32.pow(enc.width() as u32)))
+                .filter_map(|i| {
+                    let width = enc.width();
+                    let pattern = LitInt::new(&format!("{:#0width$b}", i), Span::call_site());
 
-                build_match(src.clone(), isa, child, opcodes, Some(pattern))
-            });
+                    if let Some((_, child)) = children.iter().find(|(pat, _)| *pat == i) {
+                        Some(build_match(src.clone(), isa, child, opcodes, Some(pattern)))
+                    } else if width > EXHAUSTIVE_MATCH_THRESHOLD {
+                        // Don't expand for wide bit ranges, just return
+                        None
+                    } else {
+                        Some(quote! { #pattern => None })
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            // Wide bit ranges need the None fallback, otherwise,
+            // we've exhaustively checked so unreachable!()
+            let fallback = if enc.width() > EXHAUSTIVE_MATCH_THRESHOLD {
+                quote! { _ => None }
+            } else {
+                quote! { _ => unreachable!() }
+            };
 
             if let Some(pattern) = pattern {
                 quote! {
                     #pattern => {
                         match #match_expr {
                             #(#arms),*,
-                            _ => None
+                            #fallback
                         }
                     }
                 }
             } else {
+                // Top-level match
                 quote! {
                     match #match_expr {
                         #(#arms),*,
-                        _ => None
+                        #fallback
                     }
                 }
             }

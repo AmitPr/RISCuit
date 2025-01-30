@@ -51,6 +51,10 @@ impl BitEnc {
             quote! { ((#src >> #shift) & #mask) }
         }
     }
+
+    pub fn width(&self) -> usize {
+        self.end - self.start + 1
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -126,35 +130,19 @@ impl Opcode {
             .iter()
             .map(|operand| &accessors.get(operand).expect("Failed to find accessor").1)
             .collect::<Vec<_>>();
-        let operand_inner_ty = if self.is_c() {
-            quote! { pub u16 }
-        } else {
-            quote! { pub u32 }
-        };
 
         let impls = {
             let name = &self.name;
-            let accessor_idents = self
-                .operands
-                .iter()
-                .map(|operand| &accessors.get(operand).expect("Failed to find accessor").0)
-                .collect::<Vec<_>>();
-
             quote! {
                 impl std::fmt::Debug for #opcode_ident {
                     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                        f.debug_struct(stringify!(#name))
-                            .field("inst", &self.0)
-                            #( .field(stringify!(#accessor_idents), &self.#accessor_idents()) )*
-                            .finish()
+                        f.debug_struct(stringify!(#name)).finish()
                     }
                 }
 
                 impl std::fmt::Display for #opcode_ident {
                     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                        write!(f, "{}", #name)?;
-                        #(write!(f, " {:?}", self.#accessor_idents())?;)*
-                        Ok(())
+                        write!(f, "{}", #name)
                     }
                 }
             }
@@ -162,7 +150,7 @@ impl Opcode {
 
         quote! {
             #[derive(Clone, Copy, PartialEq, Eq)]
-            pub struct #opcode_ident(#operand_inner_ty);
+            pub struct #opcode_ident;
 
             impl #opcode_ident {
                 #(#acessor_impls)*
@@ -172,11 +160,11 @@ impl Opcode {
         }
     }
 
-    pub fn full_instance(&self, isa: &Isa, src: Ident) -> TokenStream {
+    pub fn full_instance(&self, isa: &Isa) -> TokenStream {
         let ident = self.name_ident();
         let isa_ident = isa.ident();
 
-        quote! { #isa_ident::#ident(#ident(#src as _)) }
+        quote! { #isa_ident::#ident(#ident) }
     }
 
     pub fn as_variant(&self) -> TokenStream {
@@ -191,5 +179,20 @@ impl Opcode {
 
     pub fn is_c(&self) -> bool {
         self.isas.iter().any(|isa| isa.contains("c"))
+    }
+
+    pub fn mask_match(&self) -> (u32, u32) {
+        let mut mask = 0;
+        let mut value = 0;
+
+        for enc in &self.encodings {
+            let width = enc.width();
+            let start = enc.start;
+
+            mask |= ((1 << width) - 1) << start;
+            value |= enc.value << start;
+        }
+
+        (mask, value)
     }
 }

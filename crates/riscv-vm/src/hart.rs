@@ -75,41 +75,41 @@ impl Hart32 {
 
         macro_rules! reg_imm_op {
             (|$inst:ident.$rs1:ident, $inst2:ident.$imm:ident| $body:expr) => {{
-                let $rs1 = reg!($inst.$rs1());
-                let $imm = $inst2.$imm();
-                reg!($inst.rd(), { $body } as u32);
+                let $rs1 = reg!($inst.$rs1(inst));
+                let $imm = $inst2.$imm(inst);
+                reg!($inst.rd(inst), { $body } as u32);
             }};
         }
 
         macro_rules! imm_op {
             (|$inst:ident.$imm:ident| $body:expr) => {{
-                let $imm = $inst.$imm();
-                reg!($inst.rd(), { $body } as u32);
+                let $imm = $inst.$imm(inst);
+                reg!($inst.rd(inst), { $body } as u32);
             }};
         }
 
         macro_rules! reg_reg_op {
             (|$inst:ident.$rs1:ident, $inst2:ident.$rs2:ident| $body:expr) => {{
-                let $rs1 = reg!($inst.$rs1());
-                let $rs2 = reg!($inst2.$rs2());
-                reg!($inst.rd(), { $body } as u32);
+                let $rs1 = reg!($inst.$rs1(inst));
+                let $rs2 = reg!($inst2.$rs2(inst));
+                reg!($inst.rd(inst), { $body } as u32);
             }};
         }
 
         macro_rules! store_op {
             (|$inst:ident.$rs1:ident, $inst2:ident.$rs2:ident, $addr:ident| $body:expr) => {{
-                let $rs1 = reg!($inst.$rs1());
-                let $rs2 = reg!($inst2.$rs2());
-                let $addr = $rs1.wrapping_add_signed($inst.imm());
+                let $rs1 = reg!($inst.$rs1(inst));
+                let $rs2 = reg!($inst2.$rs2(inst));
+                let $addr = $rs1.wrapping_add_signed($inst.imm(inst));
                 $body;
             }};
         }
 
         macro_rules! branch_op {
             (|$inst:ident.$rs1:ident, $inst2:ident.$rs2:ident| $body:expr) => {{
-                let $rs1 = reg!($inst.$rs1());
-                let $rs2 = reg!($inst2.$rs2());
-                let offset = $inst.imm();
+                let $rs1 = reg!($inst.$rs1(inst));
+                let $rs2 = reg!($inst2.$rs2(inst));
+                let offset = $inst.imm(inst);
                 if $body {
                     next_pc = self.pc.wrapping_add_signed(offset);
                 }
@@ -118,25 +118,25 @@ impl Hart32 {
 
         macro_rules! csr_op {
             (|$inst:ident.$csr:ident, $inst2:ident.$rs1:ident| $body:expr) => {{
-                let $csr = $inst.$csr() as usize;
-                let $rs1 = reg!($inst2.$rs1());
-                reg!($inst.rd(), self.csrs[$csr]);
+                let $csr = $inst.$csr(inst) as usize;
+                let $rs1 = reg!($inst2.$rs1(inst));
+                reg!($inst.rd(inst), self.csrs[$csr]);
                 $body;
             }};
         }
 
         macro_rules! csr_imm_op {
             (|$inst:ident.$csr:ident, $inst2:ident.$imm:ident| $body:expr) => {{
-                let $csr = $inst.$csr() as usize;
-                let $imm = $inst2.$imm();
-                reg!($inst.rd(), self.csrs[$csr]);
+                let $csr = $inst.$csr(inst) as usize;
+                let $imm = $inst2.$imm(inst);
+                reg!($inst.rd(inst), self.csrs[$csr]);
                 $body;
             }};
         }
 
         macro_rules! amo_op {
             (|$inst:ident, $old:ident, $rs2:ident| $body:expr) => {{
-                let addr = reg!($inst.rs1());
+                let addr = reg!($inst.rs1(inst));
                 if addr & 3 != 0 {
                     return Err(MemoryError::UnalignedMemoryAccess {
                         access: MemoryAccess::Load,
@@ -146,8 +146,8 @@ impl Hart32 {
                     .into());
                 }
                 let $old = mem.load::<u32>(addr);
-                reg!($inst.rd(), $old);
-                let $rs2 = reg!($inst.rs2());
+                reg!($inst.rd(inst), $old);
+                let $rs2 = reg!($inst.rs2(inst));
                 mem.store::<u32>(addr, $body as u32);
             }};
         }
@@ -316,7 +316,7 @@ impl Hart32 {
             Rv32IMASC::Csrrci(ci) => csr_imm_op!(|ci.csr12, ci.imm| self.csrs[csr12] &= !imm),
             // We don't care about reservation set on single-hart ( i think )
             Rv32IMASC::LrW(lr_w) => {
-                let addr = reg!(lr_w.rs1());
+                let addr = reg!(lr_w.rs1(inst));
                 if addr & 3 != 0 {
                     return Err(MemoryError::UnalignedMemoryAccess {
                         access: MemoryAccess::Load,
@@ -328,10 +328,10 @@ impl Hart32 {
                 // TODO: Not sure if this is how the spec defines the
                 // "reservation set" for lr/sc
                 self.amo_rsv = Some(addr);
-                reg!(lr_w.rd(), mem.load::<u32>(addr));
+                reg!(lr_w.rd(inst), mem.load::<u32>(addr));
             }
             Rv32IMASC::ScW(sc_w) => {
-                let addr = reg!(sc_w.rs1());
+                let addr = reg!(sc_w.rs1(inst));
                 if addr & 3 != 0 {
                     return Err(MemoryError::UnalignedMemoryAccess {
                         access: MemoryAccess::Store,
@@ -341,10 +341,10 @@ impl Hart32 {
                     .into());
                 }
                 if self.amo_rsv.take() == Some(addr) {
-                    mem.store::<u32>(addr, reg!(sc_w.rs2()));
-                    reg!(sc_w.rd(), 0);
+                    mem.store::<u32>(addr, reg!(sc_w.rs2(inst)));
+                    reg!(sc_w.rd(inst), 0);
                 } else {
-                    reg!(sc_w.rd(), 1);
+                    reg!(sc_w.rd(inst), 1);
                 }
             }
             Rv32IMASC::AmoswapW(swap) => amo_op!(|swap, old, rs2| rs2),
@@ -357,106 +357,106 @@ impl Hart32 {
             Rv32IMASC::AmominuW(minu) => amo_op!(|minu, old, rs2| old.min(rs2)),
             Rv32IMASC::AmomaxuW(maxu) => amo_op!(|maxu, old, rs2| old.max(rs2)),
             Rv32IMASC::CAddi4spn(addi4spn) => {
-                let imm = addi4spn.imm();
-                let rd = addi4spn.rd();
+                let imm = addi4spn.imm(inst);
+                let rd = addi4spn.rd(inst);
                 self.set_reg(rd, reg!(Reg::Sp).wrapping_add(imm));
             }
             Rv32IMASC::CLw(lw) => {
-                let addr = reg!(lw.rs1()).wrapping_add(lw.imm());
-                reg!(lw.rd(), mem.load::<u32>(addr));
+                let addr = reg!(lw.rs1(inst)).wrapping_add(lw.imm(inst));
+                reg!(lw.rd(inst), mem.load::<u32>(addr));
             }
             Rv32IMASC::CSw(sw) => {
-                let addr = reg!(sw.rs1()).wrapping_add(sw.imm());
-                mem.store::<u32>(addr, reg!(sw.rs2()));
+                let addr = reg!(sw.rs1(inst)).wrapping_add(sw.imm(inst));
+                mem.store::<u32>(addr, reg!(sw.rs2(inst)));
             }
             Rv32IMASC::CAddi(caddi) => {
-                let rs1rd = caddi.rs1rd();
-                self.set_reg(rs1rd, reg!(rs1rd).wrapping_add_signed(caddi.imm()));
+                let rs1rd = caddi.rs1rd(inst);
+                self.set_reg(rs1rd, reg!(rs1rd).wrapping_add_signed(caddi.imm(inst)));
             }
             Rv32IMASC::CAddi16sp(caddi16sp) => {
-                let imm = caddi16sp.imm();
-                let rs1rd = caddi16sp.rs1rd();
+                let imm = caddi16sp.imm(inst);
+                let rs1rd = caddi16sp.rs1rd(inst);
                 self.set_reg(rs1rd, reg!(Reg::Sp).wrapping_add_signed(imm));
             }
             Rv32IMASC::CLwsp(lwsp) => {
-                let addr = reg!(Reg::Sp).wrapping_add(lwsp.imm());
-                reg!(lwsp.rd(), mem.load::<u32>(addr));
+                let addr = reg!(Reg::Sp).wrapping_add(lwsp.imm(inst));
+                reg!(lwsp.rd(inst), mem.load::<u32>(addr));
             }
             Rv32IMASC::CSwsp(swsp) => {
-                let addr = reg!(Reg::Sp).wrapping_add(swsp.imm());
-                mem.store::<u32>(addr, reg!(swsp.rs2()));
+                let addr = reg!(Reg::Sp).wrapping_add(swsp.imm(inst));
+                mem.store::<u32>(addr, reg!(swsp.rs2(inst)));
             }
             Rv32IMASC::CNop(_) => {}
             Rv32IMASC::CJal(cjal) => {
                 reg!(Reg::Ra, next_pc);
-                next_pc = self.pc.wrapping_add_signed(cjal.imm());
+                next_pc = self.pc.wrapping_add_signed(cjal.imm(inst));
             }
-            Rv32IMASC::CLi(cli) => reg!(cli.rs1rd(), cli.imm()),
-            Rv32IMASC::CLui(clui) => reg!(clui.rd(), clui.imm()),
+            Rv32IMASC::CLi(cli) => reg!(cli.rs1rd(inst), cli.imm(inst)),
+            Rv32IMASC::CLui(clui) => reg!(clui.rd(inst), clui.imm(inst)),
             Rv32IMASC::CSrli(csrli) => {
-                let rd = csrli.rs1rd();
-                reg!(rd, reg!(rd) >> csrli.shamt());
+                let rd = csrli.rs1rd(inst);
+                reg!(rd, reg!(rd) >> csrli.shamt(inst));
             }
             Rv32IMASC::CSrai(csrai) => {
-                let rd = csrai.rs1rd();
-                reg!(rd, (reg!(rd) as i32) >> csrai.shamt());
+                let rd = csrai.rs1rd(inst);
+                reg!(rd, (reg!(rd) as i32) >> csrai.shamt(inst));
             }
             Rv32IMASC::CAndi(candi) => {
-                let rd = candi.rs1rd();
-                reg!(rd, reg!(rd) & candi.imm() as u32);
+                let rd = candi.rs1rd(inst);
+                reg!(rd, reg!(rd) & candi.imm(inst) as u32);
             }
             Rv32IMASC::CSub(csub) => {
-                let rs1rd = csub.rs1rd();
-                let rs2 = reg!(csub.rs2());
+                let rs1rd = csub.rs1rd(inst);
+                let rs2 = reg!(csub.rs2(inst));
                 reg!(rs1rd, reg!(rs1rd).wrapping_sub(rs2));
             }
             Rv32IMASC::CXor(cxor) => {
-                let rs1rd = cxor.rs1rd();
-                let rs2 = reg!(cxor.rs2());
+                let rs1rd = cxor.rs1rd(inst);
+                let rs2 = reg!(cxor.rs2(inst));
                 reg!(rs1rd, reg!(rs1rd) ^ rs2);
             }
             Rv32IMASC::COr(cor) => {
-                let rs1rd = cor.rs1rd();
-                let rs2 = reg!(cor.rs2());
+                let rs1rd = cor.rs1rd(inst);
+                let rs2 = reg!(cor.rs2(inst));
                 reg!(rs1rd, reg!(rs1rd) | rs2);
             }
             Rv32IMASC::CAnd(cand) => {
-                let rs1rd = cand.rs1rd();
-                let rs2 = reg!(cand.rs2());
+                let rs1rd = cand.rs1rd(inst);
+                let rs2 = reg!(cand.rs2(inst));
                 reg!(rs1rd, reg!(rs1rd) & rs2);
             }
             Rv32IMASC::CJ(cj) => {
-                next_pc = self.pc.wrapping_add_signed(cj.imm());
+                next_pc = self.pc.wrapping_add_signed(cj.imm(inst));
             }
             Rv32IMASC::CBeqz(cbeqz) => {
-                if reg!(cbeqz.rs1()) == 0 {
-                    next_pc = self.pc.wrapping_add_signed(cbeqz.imm());
+                if reg!(cbeqz.rs1(inst)) == 0 {
+                    next_pc = self.pc.wrapping_add_signed(cbeqz.imm(inst));
                 }
             }
             Rv32IMASC::CBnez(cbnez) => {
-                if reg!(cbnez.rs1()) != 0 {
-                    next_pc = self.pc.wrapping_add_signed(cbnez.imm());
+                if reg!(cbnez.rs1(inst)) != 0 {
+                    next_pc = self.pc.wrapping_add_signed(cbnez.imm(inst));
                 }
             }
             Rv32IMASC::CSlli(cslli) => {
-                let rd = cslli.rs1rd();
-                reg!(rd, reg!(rd) << cslli.shamt());
+                let rd = cslli.rs1rd(inst);
+                reg!(rd, reg!(rd) << cslli.shamt(inst));
             }
             Rv32IMASC::CJr(cjr) => {
-                next_pc = reg!(cjr.rs1());
+                next_pc = reg!(cjr.rs1(inst));
             }
-            Rv32IMASC::CMv(cmv) => reg!(cmv.rd(), reg!(cmv.rs2())),
+            Rv32IMASC::CMv(cmv) => reg!(cmv.rd(inst), reg!(cmv.rs2(inst))),
             Rv32IMASC::CEbreak(_) => match kernel.ebreak(self, mem)? {
                 StepResult::Ok => {}
                 res => return Ok(res),
             },
             Rv32IMASC::CJalr(cjalr) => {
                 reg!(Reg::Ra, next_pc);
-                next_pc = reg!(cjalr.rs1());
+                next_pc = reg!(cjalr.rs1(inst));
             }
             Rv32IMASC::CAdd(cadd) => {
-                let rs1rd = cadd.rs1rd();
-                reg!(rs1rd, reg!(rs1rd).wrapping_add(reg!(cadd.rs2())));
+                let rs1rd = cadd.rs1rd(inst);
+                reg!(rs1rd, reg!(rs1rd).wrapping_add(reg!(cadd.rs2(inst))));
             }
             Rv32IMASC::CUnimp(_) => {
                 return Err(HartError::IllegalInst {
