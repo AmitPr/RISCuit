@@ -244,6 +244,7 @@ dependencies = [
  "clap",
  "criterion",
  "goblin",
+ "rand",
  "riscv-kernel-linux",
  "riscv-vm",
  "tracing",
@@ -637,7 +638,6 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "libc-riscv32",
- "rand",
  "riscv-inst",
  "syscalls",
  "thiserror 2.0.11",

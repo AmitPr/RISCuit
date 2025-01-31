@@ -154,15 +154,26 @@ fn find_best_bit_range(
     bit_counts: &BTreeMap<(usize, usize), (BTreeSet<u32>, usize)>,
     indices: &[usize],
 ) -> (usize, usize) {
-    // Get encoding with most patterns, where count == len(indices)
-    let (start, end) = bit_counts
+    let mut valid_ranges = bit_counts
         .iter()
         .filter(|(_, (_, count))| *count == indices.len())
-        .max_by_key(|(_, (patterns, _))| patterns.len())
-        .map(|(range, _)| range)
-        .unwrap();
+        .collect::<Vec<_>>();
+    valid_ranges.sort_by_key(|(_, (patterns, _))| patterns.len());
 
-    (*start, *end)
+    let as_ranges = valid_ranges
+        .iter()
+        .map(|(range, _)| **range)
+        .collect::<Vec<_>>();
+
+    if as_ranges.contains(&(2, 6)) && !bit_counts.get(&(2, 6)).unwrap().0.len() == 1 {
+        // Special case opcode field, if not already checked opcode field
+        (2, 6)
+    } else if as_ranges.contains(&(12, 14)) && !bit_counts.get(&(12, 14)).unwrap().0.len() == 1 {
+        // Special case funct3 field, if not already checked funct3 field
+        (12, 14)
+    } else {
+        *as_ranges.last().unwrap()
+    }
 }
 
 fn build_match(

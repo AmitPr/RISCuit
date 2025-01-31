@@ -60,7 +60,7 @@ const ISAS_TO_GEN: &[Isa] = &[
     // isa!(RV64, M, A, S, C),
     // isa!(RV64, M, A, S, F, C),
     // isa!(RV64, M, A, S, D, C),
-    // isa!(RV64, M, A, S, Q, C),
+    isa!(RV64, M, A, S, Q, C),
 ];
 
 fn main() {

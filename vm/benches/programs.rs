@@ -15,7 +15,7 @@ fn primes_setup() -> Machine<MockLinux> {
     machine
 }
 
-fn criterion_benchmark(c: &mut Criterion) {
+fn primes_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("primes-bench");
     group.sample_size(200);
     group.bench_function("primes_bench", |b| {
@@ -29,5 +29,5 @@ fn criterion_benchmark(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, criterion_benchmark);
-criterion_main!(benches);
+criterion_group!(programs, primes_bench);
+criterion_main!(programs);

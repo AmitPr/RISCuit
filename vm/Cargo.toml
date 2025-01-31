@@ -13,7 +13,12 @@ goblin = "0.9.3"
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
+rand = { version = "0.8.5", features = ["small_rng"] }
 
 [[bench]]
-name = "primes"
+name = "perf"
+harness = false
+
+[[bench]]
+name = "programs"
 harness = false
