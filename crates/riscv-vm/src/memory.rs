@@ -54,16 +54,14 @@ impl Memory {
 
     pub fn load<T: Primitive>(&self, addr: u32) -> T {
         // Safety: Primitive types are guaranteed not to overflow the address space,
-        // where `addr + size_of::<T>()` is guaranteed to be < `MEMORY_SIZE`.
+        // where `addr + size_of::<T>() < MEMORY_SIZE` is guaranteed.
         unsafe { (self.ptr.add(addr as usize) as *const T).read_unaligned() }
     }
 
     pub fn store<T: Primitive>(&mut self, addr: u32, val: T) {
         // Safety: Primitive types are guaranteed not to overflow the address space,
-        // where `addr + size_of::<T>()` is guaranteed to be < `MEMORY_SIZE`.
-        unsafe {
-            (self.ptr.add(addr as usize) as *mut T).write_unaligned(val);
-        }
+        // where `addr + size_of::<T>() < MEMORY_SIZE` is guaranteed.
+        unsafe { (self.ptr.add(addr as usize) as *mut T).write_unaligned(val) }
     }
 
     pub const fn ptr(&self, addr: u32) -> *const u8 {
@@ -91,7 +89,7 @@ impl Memory {
         addr: u32,
         max_len: Option<u32>,
     ) -> Result<&[u8], MemoryError> {
-        let max = max_len
+        let max_addr = max_len
             .map_or(Some(u32::MAX), |m| addr.checked_add(m))
             .ok_or(MemoryError::OverflowMemoryAccess {
                 access: MemoryAccess::Load,
@@ -100,7 +98,7 @@ impl Memory {
             })?;
 
         let mut cur = addr;
-        while cur < max && self.load::<u8>(cur) != 0 {
+        while cur < max_addr && self.load::<u8>(cur) != 0 {
             cur += 1;
         }
 

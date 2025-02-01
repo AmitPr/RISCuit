@@ -1,0 +1,5 @@
+dhrystone
+*.i
+*.o
+
+!strcmp.S

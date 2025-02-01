@@ -1,0 +1,18 @@
+[package]
+name = "roundtrip"
+version = "0.1.0"
+edition = "2021"
+
+[profile.release]
+opt-level = 3
+debug = false
+rpath = false
+debug-assertions = false
+codegen-units = 1
+# panic = 'abort'
+incremental = false
+overflow-checks = true
+
+[dependencies]
+
+[workspace]

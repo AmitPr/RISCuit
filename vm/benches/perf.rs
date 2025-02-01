@@ -1,5 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::*;
+use riscv_kernel_linux::MockLinux;
+use riscv_vm::machine::Machine;
 
 fn decode_setup() -> Vec<u32> {
     let seed = [0; 32];
@@ -25,5 +27,73 @@ fn decode_bench(c: &mut Criterion) {
     });
 }
 
-criterion_group!(microbenches, decode_bench);
+fn roundtrip_bench(c: &mut Criterion) {
+    const ROUNDTRIP_ELF_FILE: &str = "/Users/amit/Documents/projects/derisc/riscv/roundtrip/target/riscv32imac-unknown-linux-musl/release/roundtrip";
+    let elf = std::fs::read(ROUNDTRIP_ELF_FILE).expect("Failed to read ELF file");
+
+    c.bench_function("roundtrip_e2e", |b| {
+        b.iter(|| {
+            let mut machine = Machine::new(MockLinux::new(false));
+            machine.kernel.load_static_elf(
+                &mut machine.hart,
+                &mut machine.mem,
+                black_box(&elf),
+                &[],
+                &[],
+            );
+            machine.run().expect("Failed to run");
+        })
+    });
+}
+
+fn roundtrip_setup_bench(c: &mut Criterion) {
+    const ROUNDTRIP_ELF_FILE: &str = "/Users/amit/Documents/projects/derisc/riscv/roundtrip/target/riscv32imac-unknown-linux-musl/release/roundtrip";
+    let elf = std::fs::read(ROUNDTRIP_ELF_FILE).expect("Failed to read ELF file");
+
+    c.bench_function("roundtrip_load", |b| {
+        b.iter(|| {
+            let mut machine = Machine::new(MockLinux::new(false));
+            machine.kernel.load_static_elf(
+                &mut machine.hart,
+                &mut machine.mem,
+                black_box(&elf),
+                &[],
+                &[],
+            );
+        })
+    });
+}
+
+fn roundtrip_exec_bench(c: &mut Criterion) {
+    const ROUNDTRIP_ELF_FILE: &str = "/Users/amit/Documents/projects/derisc/riscv/roundtrip/target/riscv32imac-unknown-linux-musl/release/roundtrip";
+    let elf = std::fs::read(ROUNDTRIP_ELF_FILE).expect("Failed to read ELF file");
+
+    c.bench_function("roundtrip_exec", |b| {
+        b.iter_batched(
+            || {
+                let mut machine = Machine::new(MockLinux::new(false));
+                machine.kernel.load_static_elf(
+                    &mut machine.hart,
+                    &mut machine.mem,
+                    black_box(&elf),
+                    &[],
+                    &[],
+                );
+                machine
+            },
+            |mut machine| {
+                machine.run().expect("Failed to run");
+            },
+            criterion::BatchSize::LargeInput,
+        )
+    });
+}
+
+criterion_group!(
+    microbenches,
+    decode_bench,
+    roundtrip_bench,
+    roundtrip_setup_bench,
+    roundtrip_exec_bench,
+);
 criterion_main!(microbenches);

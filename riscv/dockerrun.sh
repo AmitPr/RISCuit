@@ -1,0 +1,1 @@
+docker run -it -v $(pwd):/code -w /code --rm rvbuild
