@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::prelude::*;
 use riscv_kernel_linux::MockLinux;
@@ -28,8 +30,9 @@ fn decode_bench(c: &mut Criterion) {
 }
 
 fn roundtrip_bench(c: &mut Criterion) {
-    const ROUNDTRIP_ELF_FILE: &str = "/Users/amit/Documents/projects/derisc/riscv/roundtrip/target/riscv32imac-unknown-linux-musl/release/roundtrip";
-    let elf = std::fs::read(ROUNDTRIP_ELF_FILE).expect("Failed to read ELF file");
+    let file = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../riscv/roundtrip/target/riscv32imac-unknown-linux-musl/release/roundtrip");
+    let elf = std::fs::read(file).expect("Failed to read ELF file");
 
     c.bench_function("roundtrip_e2e", |b| {
         b.iter(|| {
@@ -47,8 +50,9 @@ fn roundtrip_bench(c: &mut Criterion) {
 }
 
 fn roundtrip_setup_bench(c: &mut Criterion) {
-    const ROUNDTRIP_ELF_FILE: &str = "/Users/amit/Documents/projects/derisc/riscv/roundtrip/target/riscv32imac-unknown-linux-musl/release/roundtrip";
-    let elf = std::fs::read(ROUNDTRIP_ELF_FILE).expect("Failed to read ELF file");
+    let file = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../riscv/roundtrip/target/riscv32imac-unknown-linux-musl/release/roundtrip");
+    let elf = std::fs::read(file).expect("Failed to read ELF file");
 
     c.bench_function("roundtrip_load", |b| {
         b.iter(|| {
@@ -65,8 +69,9 @@ fn roundtrip_setup_bench(c: &mut Criterion) {
 }
 
 fn roundtrip_exec_bench(c: &mut Criterion) {
-    const ROUNDTRIP_ELF_FILE: &str = "/Users/amit/Documents/projects/derisc/riscv/roundtrip/target/riscv32imac-unknown-linux-musl/release/roundtrip";
-    let elf = std::fs::read(ROUNDTRIP_ELF_FILE).expect("Failed to read ELF file");
+    let file = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../riscv/roundtrip/target/riscv32imac-unknown-linux-musl/release/roundtrip");
+    let elf = std::fs::read(file).expect("Failed to read ELF file");
 
     c.bench_function("roundtrip_exec", |b| {
         b.iter_batched(

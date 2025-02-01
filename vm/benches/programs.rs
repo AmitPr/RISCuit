@@ -1,11 +1,13 @@
+use std::path::Path;
+
 use criterion::{criterion_group, criterion_main, Criterion};
 use riscv_kernel_linux::MockLinux;
 use riscv_vm::machine::Machine;
 
 fn primes_setup() -> Machine<MockLinux> {
-    // TODO: Hardcoded path for now.
-    const PRIMES_ELF_FILE: &str = "/Users/amit/Documents/projects/derisc/riscv/guest_std/target/riscv32imac-unknown-linux-musl/release/guest_std";
-    let elf = std::fs::read(PRIMES_ELF_FILE).expect("Failed to read ELF file");
+    let file = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../riscv/guest_std/target/riscv32imac-unknown-linux-musl/release/guest_std");
+    let elf = std::fs::read(file).expect("Failed to read ELF file");
 
     let mut machine = Machine::new(MockLinux::new(false));
     machine
@@ -30,9 +32,8 @@ fn primes_bench(c: &mut Criterion) {
 }
 
 fn dhrystone_setup() -> Machine<MockLinux> {
-    // TODO: Hardcoded path for now.
-    const PRIMES_ELF_FILE: &str = "/Users/amit/Documents/projects/derisc/riscv/dhrystone/dhrystone";
-    let elf = std::fs::read(PRIMES_ELF_FILE).expect("Failed to read ELF file");
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../riscv/dhrystone/dhrystone");
+    let elf = std::fs::read(file).expect("Failed to read ELF file");
 
     let mut machine = Machine::new(MockLinux::new(false));
     machine
