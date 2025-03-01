@@ -50,9 +50,9 @@ impl Hart32 {
         (start as usize..=end as usize).map(|i| (unsafe { Reg::from_u5(i as u8) }, self.regs[i]))
     }
 
-    pub fn step<K: Kernel>(
+    pub fn step<K: Kernel<Memory: Memory<Addr = u32>>>(
         &mut self,
-        mem: &mut Memory,
+        mem: &mut K::Memory,
         kernel: &mut K,
     ) -> Result<StepResult, MachineError<K::Error>> {
         let inst = mem.load::<u32>(self.pc);

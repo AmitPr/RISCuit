@@ -17,18 +17,39 @@ pub const MEMORY_SIZE: usize = const {
     u32::MAX as usize + PAGE_SIZE
 };
 
+pub trait Memory {
+    type Addr;
+    fn load<T: Primitive>(&self, addr: Self::Addr) -> T;
+    fn store<T: Primitive>(&mut self, addr: Self::Addr, val: T);
+}
+
 /// A fully encompassing memory struct, using `mmap` to allocate
 /// the full 32-bit (+1 page) address space.
 ///
 /// Since we're only using rv32, we can safely use this implementation
 /// without bounds-checking.
-pub struct Memory {
+pub struct Memory32 {
     ptr: *mut u8,
     pub brk: u32,
     pub mmap_top: u32,
 }
 
-impl Memory {
+impl Memory for Memory32 {
+    type Addr = u32;
+    fn load<T: Primitive>(&self, addr: u32) -> T {
+        // Safety: Primitive types are guaranteed not to overflow the address space,
+        // where `addr + size_of::<T>() < MEMORY_SIZE` is guaranteed.
+        unsafe { (self.ptr.add(addr as usize) as *const T).read_unaligned() }
+    }
+
+    fn store<T: Primitive>(&mut self, addr: u32, val: T) {
+        // Safety: Primitive types are guaranteed not to overflow the address space,
+        // where `addr + size_of::<T>() < MEMORY_SIZE` is guaranteed.
+        unsafe { (self.ptr.add(addr as usize) as *mut T).write_unaligned(val) }
+    }
+}
+
+impl Memory32 {
     pub fn new() -> Self {
         let ptr = unsafe {
             libc::mmap(
@@ -51,19 +72,6 @@ impl Memory {
             mmap_top: 0xC000_0000u32, // Start mmap at 3GB, downwards
         }
     }
-
-    pub fn load<T: Primitive>(&self, addr: u32) -> T {
-        // Safety: Primitive types are guaranteed not to overflow the address space,
-        // where `addr + size_of::<T>() < MEMORY_SIZE` is guaranteed.
-        unsafe { (self.ptr.add(addr as usize) as *const T).read_unaligned() }
-    }
-
-    pub fn store<T: Primitive>(&mut self, addr: u32, val: T) {
-        // Safety: Primitive types are guaranteed not to overflow the address space,
-        // where `addr + size_of::<T>() < MEMORY_SIZE` is guaranteed.
-        unsafe { (self.ptr.add(addr as usize) as *mut T).write_unaligned(val) }
-    }
-
     pub const fn ptr(&self, addr: u32) -> *const u8 {
         unsafe { self.ptr.add(addr as usize) }
     }
@@ -137,13 +145,13 @@ impl Memory {
     }
 }
 
-impl Default for Memory {
+impl Default for Memory32 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Drop for Memory {
+impl Drop for Memory32 {
     fn drop(&mut self) {
         unsafe {
             libc::munmap(self.ptr as *mut libc::c_void, MEMORY_SIZE);

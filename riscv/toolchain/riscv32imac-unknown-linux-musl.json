@@ -17,14 +17,15 @@
     "gnu-cc": [
       "-march=rv32imac",
       "-mabi=ilp32",
-      "-static"
+      "--data-sections"
     ]
   },
   "linker-flavor": "gnu-cc",
-  "dynamic-linking": false,
+  "dynamic-linking": true,
+  "crt-objects-fallback": "musl",
   "crt-static-default": true,
   "crt-static-respected": true,
-  "position-independent-executables": false,
+  "position-independent-executables": true,
   "llvm-target": "riscv32-unknown-linux-musl",
   "llvm-abiname": "ilp32",
   "panic-strategy": "abort",

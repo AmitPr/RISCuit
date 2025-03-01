@@ -47,7 +47,7 @@ WORKDIR /opt/rust/
 COPY riscv32imac-unknown-linux-musl.json /opt/rust/
 
 # Ignore missing libunwind by creating a dummy file
-RUN touch /build/buildroot-2024.11.1/output/host/riscv32-buildroot-linux-musl/sysroot/usr/lib/libunwind.a
+RUN touch /build/buildroot-2024.11.1/output/host/riscv32-riscuit-linux-musl/sysroot/usr/lib/libunwind.a
 # RUN ln -s /build/buildroot-2024.11.1/output/host/lib/gcc/riscv32-buildroot-linux-musl/13.3.0/libgcc.a /build/buildroot-2024.11.1/output/host/lib/gcc/riscv32-buildroot-linux-musl/13.3.0/libunwind.a
 
 # Build the project
@@ -56,4 +56,7 @@ RUN touch /build/buildroot-2024.11.1/output/host/riscv32-buildroot-linux-musl/sy
 #     -Z build-std=core,alloc,std,panic_abort \
 #     -Z build-std-features=panic_immediate_abort,optimize_for_size \
 #     --target /opt/rust/riscv32imac-unknown-linux-musl.json \
-#     --config target.riscv32imac-unknown-linux-musl.linker=\"riscv32-buildroot-linux-musl-gcc\" 
+#     --config target.riscv32imac-unknown-linux-musl.linker=\"riscv32-riscuit-linux-musl-gcc\" 
+
+# cargo +nightly build --release -Z build-std=core,alloc,std,panic_abort -Z build-std-features=panic_immediate_abort,optimize_for_size --target /opt/rust/riscv32imac-unknown-linux-musl.json --config target.riscv32imac-unknown-linux-musl.linker=\"riscv32-riscuit-linux-musl-gcc\" 
+# RUSTFLAGS="-C target-feature=-crt-static"

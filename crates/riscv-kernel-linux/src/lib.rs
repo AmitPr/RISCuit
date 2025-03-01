@@ -8,7 +8,7 @@ use riscv_vm::{
     error::MachineError,
     hart::Hart32,
     machine::{Kernel, StepResult},
-    memory::Memory,
+    memory::{Memory, Memory32},
     riscv_inst::Reg,
 };
 use syscalls::riscv32::Sysno;
@@ -27,11 +27,12 @@ pub struct MockLinux {
 
 impl Kernel for MockLinux {
     type Error = LinuxError;
+    type Memory = Memory32;
 
     fn syscall(
         &mut self,
         hart: &mut Hart32,
-        mem: &mut Memory,
+        mem: &mut Memory32,
     ) -> Result<StepResult, MachineError<Self::Error>> {
         macro_rules! reg {
             ($reg: ident) => {
@@ -133,7 +134,7 @@ impl MockLinux {
     pub fn load_static_elf<'a>(
         &mut self,
         hart: &mut Hart32,
-        mem: &mut Memory,
+        mem: &mut Memory32,
         bytes: &'a [u8],
         args: &[&str],
         env: &[&str],

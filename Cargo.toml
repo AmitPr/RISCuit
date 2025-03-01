@@ -3,6 +3,10 @@ members = ["vm", "crates/*", "test/*"]
 exclude = ["riscv/*"]
 resolver = "2"
 
+[profile.profiling]
+inherits = "release"
+debug = true
+
 [workspace.dependencies]
 riscv-vm = { path = "crates/riscv-vm" }
 riscv-kernel-linux = { path = "crates/riscv-kernel-linux" }

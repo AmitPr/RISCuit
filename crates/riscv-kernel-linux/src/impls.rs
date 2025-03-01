@@ -1,6 +1,6 @@
 use std::ffi::{CStr, CString};
 
-use riscv_vm::memory::Memory;
+use riscv_vm::memory::{Memory, Memory32};
 
 use crate::MockLinux;
 
@@ -12,7 +12,7 @@ impl MockLinux {
 
     pub(crate) fn write(
         &mut self,
-        mem: &Memory,
+        mem: &Memory32,
         fd: i32,
         buf: u32,
         count: u32,
@@ -44,7 +44,7 @@ impl MockLinux {
 
     pub(crate) fn writev(
         &mut self,
-        mem: &Memory,
+        mem: &Memory32,
         fd: i32,
         iov: u32,
         iovcnt: i32,
@@ -72,7 +72,7 @@ impl MockLinux {
 
     pub(crate) fn readlinkat(
         &mut self,
-        mem: &mut Memory,
+        mem: &mut Memory32,
         _dirfd: i32,
         pathname: u32,
         buf: u32,
@@ -108,7 +108,7 @@ impl MockLinux {
         Ok(0x1)
     }
 
-    pub(crate) fn set_tid_address(&mut self, mem: &mut Memory, tidptr: u32) -> Result<u32, i32> {
+    pub(crate) fn set_tid_address(&mut self, mem: &mut Memory32, tidptr: u32) -> Result<u32, i32> {
         let tid = self.gettid()?;
         mem.store(tidptr, tid);
 
@@ -122,7 +122,7 @@ impl MockLinux {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn futex(
         &mut self,
-        mem: &mut Memory,
+        mem: &mut Memory32,
         uaddr: u32,
         op: u32,
         val: u32,
@@ -180,7 +180,7 @@ impl MockLinux {
 
     pub(crate) fn set_robust_list(
         &mut self,
-        _mem: &mut Memory,
+        _mem: &mut Memory32,
         _head: u32,
         _len: u32,
     ) -> Result<u32, i32> {
@@ -193,7 +193,7 @@ impl MockLinux {
 
     pub fn rt_sigaction(
         &mut self,
-        _mem: &Memory,
+        _mem: &Memory32,
         _sig: u32,
         _act: u32,
         _oldact: u32,
@@ -205,7 +205,7 @@ impl MockLinux {
 
     pub fn rt_sigprocmask(
         &mut self,
-        mem: &mut Memory,
+        mem: &mut Memory32,
         _how: u32,
         _set: u32,
         oldset: u32,
@@ -219,7 +219,7 @@ impl MockLinux {
         Ok(0)
     }
 
-    pub(crate) fn brk(&mut self, mem: &mut Memory, addr: u32) -> Result<u32, i32> {
+    pub(crate) fn brk(&mut self, mem: &mut Memory32, addr: u32) -> Result<u32, i32> {
         // TODO: Move brk / mmap_top to be managed by Kernel struct.
         // TODO: OOM detection/handling
         let old_brk = mem.brk;
@@ -253,7 +253,7 @@ impl MockLinux {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn mmap(
         &mut self,
-        mem: &mut Memory,
+        mem: &mut Memory32,
         addr: u32,
         len: u32,
         _prot: u32,
@@ -302,7 +302,7 @@ impl MockLinux {
 
     pub(crate) fn mprotect(
         &mut self,
-        _mem: &Memory,
+        _mem: &Memory32,
         _addr: u32,
         _len: u32,
         _prot: u32,
@@ -312,7 +312,7 @@ impl MockLinux {
 
     pub(crate) fn getrlimit(
         &mut self,
-        mem: &mut Memory,
+        mem: &mut Memory32,
         resource: u32,
         rlim_ptr: u32,
     ) -> Result<u32, i32> {
@@ -342,7 +342,7 @@ impl MockLinux {
 
     pub(crate) fn riscv_hwprobe(
         &mut self,
-        _mem: &Memory,
+        _mem: &Memory32,
         _pairs: u32,
         _pair_count: u32,
         _cpusetsize: u32,
@@ -354,7 +354,7 @@ impl MockLinux {
 
     pub(crate) fn getrandom(
         &mut self,
-        mem: &mut Memory,
+        mem: &mut Memory32,
         buf: u32,
         len: u32,
         _flags: u32,
@@ -375,7 +375,7 @@ impl MockLinux {
 
     pub(crate) fn statx(
         &mut self,
-        _mem: &Memory,
+        _mem: &Memory32,
         _dirfd: i32,
         _pathname: u32,
         _flags: u32,
@@ -388,7 +388,7 @@ impl MockLinux {
 
     pub(crate) fn ppoll_time64(
         &mut self,
-        mem: &Memory,
+        mem: &Memory32,
         fds: u32,
         nfds: u32,
         _tsp: u32,

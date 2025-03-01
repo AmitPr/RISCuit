@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use pprof::criterion::{Output, PProfProfiler};
 use rand::prelude::*;
 use riscv_kernel_linux::MockLinux;
 use riscv_vm::machine::Machine;
@@ -95,10 +96,8 @@ fn roundtrip_exec_bench(c: &mut Criterion) {
 }
 
 criterion_group!(
-    microbenches,
-    decode_bench,
-    roundtrip_bench,
-    roundtrip_setup_bench,
-    roundtrip_exec_bench,
+    name = microbenches;
+    config = Criterion::default().with_profiler(PProfProfiler::new(10_000, Output::Flamegraph(None)));
+    targets = decode_bench, roundtrip_bench, roundtrip_setup_bench, roundtrip_exec_bench,
 );
 criterion_main!(microbenches);

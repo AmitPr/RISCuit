@@ -4,6 +4,7 @@ use clap::Parser;
 use riscv_kernel_linux::MockLinux;
 use riscv_vm::{
     machine::{Machine, MachineState},
+    memory::Memory,
     riscv_inst::Reg,
 };
 
