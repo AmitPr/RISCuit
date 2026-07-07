@@ -8,8 +8,7 @@ use crate::{
 
 /// A simple CPU for RV32I instructions
 pub struct Hart32 {
-    // Hot state first: regs + pc + inst_count fit in the first few cache
-    // lines. The 16KiB CSR file is rarely touched and lives at the end.
+    // Hot fields first; the 16KiB CSR file is cold and lives at the end.
     regs: [u32; 32],
     pub pc: u32,
     pub inst_count: u64,
