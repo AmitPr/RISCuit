@@ -8,7 +8,7 @@
 use riscv_inst::codegen::rv64imasc::Rv64IMASC;
 use riscv_inst::Reg;
 
-use super::{mem_fault, Exec, Execute, Hart, X64};
+use super::{mem_fault, take_err, Exec, Execute, Hart, X64};
 use crate::{
     error::{HartError, MachineError, MemoryAccess, MemoryError},
     machine::{Kernel, StepResult},
@@ -25,6 +25,7 @@ impl Execute for X64 {
         // registers; inst_count is flushed before kernel entry and on exit.
         let mut pc = hart.pc;
         let mut count = 0u64;
+        let mut err = None;
         let result = loop {
             let Ok(inst) = mem.load::<u32>(pc) else {
                 break Err(mem_fault(MemoryAccess::Load, pc as u64));
@@ -32,12 +33,10 @@ impl Execute for X64 {
             let Some(op) = Rv64IMASC::parse(inst) else {
                 break Err(HartError::invalid(pc, inst).into());
             };
-            match exec_op_at(hart, op, inst, pc, mem) {
-                Ok(Exec::Next(next_pc)) => {
-                    count += 1;
-                    pc = next_pc;
-                }
-                Ok(trap) => {
+            match exec_op_at(hart, op, inst, &mut pc, mem, &mut err) {
+                Exec::Next => count += 1,
+                Exec::Error => break Err(take_err(&mut err)),
+                trap => {
                     hart.inst_count += count;
                     count = 0;
                     let res = match trap {
@@ -54,7 +53,6 @@ impl Execute for X64 {
                         Err(e) => break Err(e),
                     }
                 }
-                Err(e) => break Err(e),
             }
         };
         hart.inst_count += count;
@@ -66,17 +64,19 @@ impl Execute for X64 {
         mem: &mut K::Memory,
         kernel: &mut K,
     ) -> Result<StepResult, MachineError<K::Error>> {
-        let pc = hart.pc;
+        let mut pc = hart.pc;
         let Ok(inst) = mem.load::<u32>(pc) else {
             return Err(mem_fault(MemoryAccess::Load, pc as u64));
         };
         let op = Rv64IMASC::parse(inst).ok_or_else(|| HartError::invalid(pc, inst))?;
 
-        match exec_op_at(hart, op, inst, pc, mem)? {
-            Exec::Next(_) => {
+        let mut err = None;
+        match exec_op_at(hart, op, inst, &mut pc, mem, &mut err) {
+            Exec::Next => {
                 hart.inst_count += 1;
                 Ok(StepResult::Ok)
             }
+            Exec::Error => Err(take_err(&mut err)),
             trap => {
                 let res = match trap {
                     Exec::Syscall => kernel.syscall(hart, mem)?,
@@ -92,18 +92,33 @@ impl Execute for X64 {
     }
 }
 
-/// Execute an already-decoded instruction at `pc`, returning the next pc.
-/// `hart.pc` is updated on completion.
+/// Execute an already-decoded instruction at `*pc`.
+///
+/// On [`Exec::Next`], the next pc is written through `pc` (an out-parameter
+/// rather than an enum payload; see [`Exec`]) and `hart.pc` is updated. On
+/// [`Exec::Error`], the error is deposited in `err`. On the trap variants
+/// and on error, `*pc` and `hart.pc` are left untouched.
 #[inline(always)]
 fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
     hart: &mut Hart<X64>,
     op: Rv64IMASC,
     inst: u32,
-    pc: u64,
+    pc: &mut u64,
     mem: &mut M,
-) -> Result<Exec<u64>, MachineError<E>> {
+    err: &mut Option<MachineError<E>>,
+) -> Exec {
+    let pc_out = pc;
+    let pc = *pc_out;
     let pc_inc = if inst & 0b11 == 0b11 { 4 } else { 2 };
     let mut next_pc = pc.wrapping_add(pc_inc);
+
+    // Error return: deposit the error in the caller's slot (see `Exec`).
+    macro_rules! fail {
+        ($e:expr) => {{
+            *err = Some($e);
+            return Exec::Error;
+        }};
+    }
 
     // Guest memory accessors: attach fault context (cold) at the call site
     // so the hot path only carries a zero-sized error.
@@ -112,7 +127,7 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
             let a = $addr;
             match mem.load::<$t>(a) {
                 Ok(v) => v,
-                Err(_) => return Err(mem_fault(MemoryAccess::Load, a as u64)),
+                Err(_) => fail!(mem_fault(MemoryAccess::Load, a as u64)),
             }
         }};
     }
@@ -120,7 +135,7 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
         ($t:ty, $addr:expr, $val:expr) => {{
             let a = $addr;
             if mem.store::<$t>(a, $val).is_err() {
-                return Err(mem_fault(MemoryAccess::Store, a as u64));
+                fail!(mem_fault(MemoryAccess::Store, a as u64));
             }
         }};
     }
@@ -204,7 +219,7 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
         (|$inst:ident, $old:ident, $rs2:ident| $body:expr) => {{
             let addr = reg!($inst.rs1(inst));
             if addr & 3 != 0 {
-                return Err(MemoryError::UnalignedMemoryAccess {
+                fail!(MemoryError::UnalignedMemoryAccess {
                     access: MemoryAccess::Load,
                     addr,
                     required: 4,
@@ -222,7 +237,7 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
         (|$inst:ident, $old:ident, $rs2:ident| $body:expr) => {{
             let addr = reg!($inst.rs1(inst));
             if addr & 7 != 0 {
-                return Err(MemoryError::UnalignedMemoryAccess {
+                fail!(MemoryError::UnalignedMemoryAccess {
                     access: MemoryAccess::Load,
                     addr,
                     required: 8,
@@ -314,9 +329,9 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
         Rv64IMASC::And(and) => reg_reg_op!(|and.rs1, and.rs2| rs1 & rs2),
         Rv64IMASC::Fence(_) => {}
         Rv64IMASC::FenceI(_) => {}
-        Rv64IMASC::Ecall(_) => return Ok(Exec::Syscall),
-        Rv64IMASC::Ebreak(_) => return Ok(Exec::Ebreak),
-        Rv64IMASC::Unimp(_) => return Err(HartError::illegal(pc, inst).into()),
+        Rv64IMASC::Ecall(_) => return Exec::Syscall,
+        Rv64IMASC::Ebreak(_) => return Exec::Ebreak,
+        Rv64IMASC::Unimp(_) => fail!(HartError::illegal(pc, inst).into()),
 
         // --- RV64I *W (operate on low 32 bits, sign-extend result) ---
         Rv64IMASC::Addiw(addiw) => reg_imm_op!(
@@ -432,17 +447,17 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
         }),
 
         // --- System ---
-        Rv64IMASC::Uret(_) => return Err(HartError::unimplemented(pc, inst).into()),
-        Rv64IMASC::Sret(_) => return Err(HartError::unimplemented(pc, inst).into()),
-        Rv64IMASC::Hret(_) => return Err(HartError::unimplemented(pc, inst).into()),
+        Rv64IMASC::Uret(_) => fail!(HartError::unimplemented(pc, inst).into()),
+        Rv64IMASC::Sret(_) => fail!(HartError::unimplemented(pc, inst).into()),
+        Rv64IMASC::Hret(_) => fail!(HartError::unimplemented(pc, inst).into()),
         Rv64IMASC::Mret(_) => {
             // TODO: Not erroring because the ISA tests use this.
             // But we haven't implemented privilege levels yet.
         }
-        Rv64IMASC::Dret(_) => return Err(HartError::unimplemented(pc, inst).into()),
-        Rv64IMASC::SfenceVm(_) => return Err(HartError::unimplemented(pc, inst).into()),
-        Rv64IMASC::SfenceVma(_) => return Err(HartError::unimplemented(pc, inst).into()),
-        Rv64IMASC::Wfi(_) => return Err(HartError::unimplemented(pc, inst).into()),
+        Rv64IMASC::Dret(_) => fail!(HartError::unimplemented(pc, inst).into()),
+        Rv64IMASC::SfenceVm(_) => fail!(HartError::unimplemented(pc, inst).into()),
+        Rv64IMASC::SfenceVma(_) => fail!(HartError::unimplemented(pc, inst).into()),
+        Rv64IMASC::Wfi(_) => fail!(HartError::unimplemented(pc, inst).into()),
         Rv64IMASC::Csrrw(rw) => csr_op!(|rw.csr12, rw.rs1| hart.csrs[csr12] = rs1),
         Rv64IMASC::Csrrs(rs) => csr_op!(|rs.csr12, rs.rs1| hart.csrs[csr12] |= rs1),
         Rv64IMASC::Csrrc(rc) => csr_op!(|rc.csr12, rc.rs1| hart.csrs[csr12] &= !rs1),
@@ -454,7 +469,7 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
         Rv64IMASC::LrW(lr_w) => {
             let addr = reg!(lr_w.rs1(inst));
             if addr & 3 != 0 {
-                return Err(MemoryError::UnalignedMemoryAccess {
+                fail!(MemoryError::UnalignedMemoryAccess {
                     access: MemoryAccess::Load,
                     addr,
                     required: 4,
@@ -467,7 +482,7 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
         Rv64IMASC::ScW(sc_w) => {
             let addr = reg!(sc_w.rs1(inst));
             if addr & 3 != 0 {
-                return Err(MemoryError::UnalignedMemoryAccess {
+                fail!(MemoryError::UnalignedMemoryAccess {
                     access: MemoryAccess::Store,
                     addr,
                     required: 4,
@@ -495,7 +510,7 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
         Rv64IMASC::LrD(lr_d) => {
             let addr = reg!(lr_d.rs1(inst));
             if addr & 7 != 0 {
-                return Err(MemoryError::UnalignedMemoryAccess {
+                fail!(MemoryError::UnalignedMemoryAccess {
                     access: MemoryAccess::Load,
                     addr,
                     required: 8,
@@ -508,7 +523,7 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
         Rv64IMASC::ScD(sc_d) => {
             let addr = reg!(sc_d.rs1(inst));
             if addr & 7 != 0 {
-                return Err(MemoryError::UnalignedMemoryAccess {
+                fail!(MemoryError::UnalignedMemoryAccess {
                     access: MemoryAccess::Store,
                     addr,
                     required: 8,
@@ -655,7 +670,7 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
             next_pc = reg!(cjr.rs1(inst));
         }
         Rv64IMASC::CMv(cmv) => reg!(cmv.rd(inst), reg!(cmv.rs2(inst))),
-        Rv64IMASC::CEbreak(_) => return Ok(Exec::Ebreak),
+        Rv64IMASC::CEbreak(_) => return Exec::Ebreak,
         Rv64IMASC::CJalr(cjalr) => {
             reg!(Reg::Ra, next_pc);
             next_pc = reg!(cjalr.rs1(inst));
@@ -664,10 +679,11 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
             let rs1rd = cadd.rs1rd(inst);
             reg!(rs1rd, reg!(rs1rd).wrapping_add(reg!(cadd.rs2(inst))));
         }
-        Rv64IMASC::CUnimp(_) => return Err(HartError::illegal(pc, inst).into()),
+        Rv64IMASC::CUnimp(_) => fail!(HartError::illegal(pc, inst).into()),
     }
 
     hart.pc = next_pc;
+    *pc_out = next_pc;
 
-    Ok(Exec::Next(next_pc))
+    Exec::Next
 }

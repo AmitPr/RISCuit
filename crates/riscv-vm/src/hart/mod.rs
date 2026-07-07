@@ -194,11 +194,35 @@ pub trait Execute: Xlen {
 /// Kernel entry (ecall/ebreak) is signalled rather than handled so callers
 /// can flush register-held state (e.g. the instruction count) first; pc is
 /// not advanced for those variants.
-pub(crate) enum Exec<U> {
-    /// Continue at this pc.
-    Next(U),
-    /// An ecall; invoke [`Kernel::syscall`].
+///
+/// Deliberately payload-free: the next pc travels through the `&mut` pc
+/// out-parameter of `exec_op_at`, and errors through the `&mut` error slot,
+/// instead of riding in enum/`Result` payloads. A payload-carrying return
+/// makes LLVM pack tag+payload into a two-register aggregate at every arm's
+/// join point and unpack it at the loop head, putting a shift/test/shift
+/// chain on the loop-carried pc dependence (measured ~12% interpreter
+/// throughput).
+pub(crate) enum Exec {
+    /// Continue at the pc written through the out-parameter.
+    Next,
+    /// An ecall; invoke [`Kernel::syscall`]. pc is not advanced.
     Syscall,
-    /// An ebreak / c.ebreak; invoke [`Kernel::ebreak`].
+    /// An ebreak / c.ebreak; invoke [`Kernel::ebreak`]. pc is not advanced.
     Ebreak,
+    /// Execution faulted; the error is in the caller's error slot.
+    Error,
+}
+
+/// Take the error deposited by an [`Exec::Error`] return. Cold: only ever
+/// reached on the (terminal) error path.
+#[cold]
+#[inline(never)]
+pub(crate) fn take_err<E: std::error::Error>(
+    slot: &mut Option<MachineError<E>>,
+) -> MachineError<E> {
+    match slot.take() {
+        Some(e) => e,
+        // exec_op_at fills the slot before returning Exec::Error.
+        None => unreachable!("Exec::Error without a deposited error"),
+    }
 }
