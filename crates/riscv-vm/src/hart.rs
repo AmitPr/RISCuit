@@ -8,22 +8,23 @@ use crate::{
 
 /// A simple CPU for RV32I instructions
 pub struct Hart32 {
+    // Hot fields first; the 16KiB CSR file is cold and lives at the end.
     regs: [u32; 32],
-    csrs: [u32; 4096],
     pub pc: u32,
     pub inst_count: u64,
     /// Atomic memory reservation set on this hart
     pub amo_rsv: Option<u32>,
+    csrs: [u32; 4096],
 }
 
 impl Hart32 {
     pub fn new() -> Self {
         Hart32 {
             regs: [0; 32],
-            csrs: [0; 4096],
             pc: 0,
             inst_count: 0,
             amo_rsv: None,
+            csrs: [0; 4096],
         }
     }
 
@@ -50,7 +51,33 @@ impl Hart32 {
         (start as usize..=end as usize).map(|i| (unsafe { Reg::from_u5(i as u8) }, self.regs[i]))
     }
 
+    /// Execute a single instruction.
     pub fn step<K: Kernel<Memory: Memory<Addr = u32>>>(
+        &mut self,
+        mem: &mut K::Memory,
+        kernel: &mut K,
+    ) -> Result<StepResult, MachineError<K::Error>> {
+        self.step_inner(mem, kernel)
+    }
+
+    /// Run until the kernel halts the machine or an error occurs.
+    ///
+    /// Looping over inlined [`step_inner`] prevents register spills.
+    pub fn run<K: Kernel<Memory: Memory<Addr = u32>>>(
+        &mut self,
+        mem: &mut K::Memory,
+        kernel: &mut K,
+    ) -> Result<(), MachineError<K::Error>> {
+        loop {
+            match self.step_inner(mem, kernel)? {
+                StepResult::Ok => {}
+                StepResult::Halt => return Ok(()),
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn step_inner<K: Kernel<Memory: Memory<Addr = u32>>>(
         &mut self,
         mem: &mut K::Memory,
         kernel: &mut K,
