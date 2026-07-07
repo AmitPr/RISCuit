@@ -99,7 +99,7 @@ impl Memory32 {
     ) -> Result<&[u8], MemoryError> {
         let max_addr = max_len
             .map_or(Some(u32::MAX), |m| addr.checked_add(m))
-            .ok_or(MemoryError::OverflowMemoryAccess {
+            .ok_or_else(|| MemoryError::OverflowMemoryAccess {
                 access: MemoryAccess::Load,
                 addr,
                 len: max_len.unwrap(),
