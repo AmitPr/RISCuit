@@ -3,6 +3,60 @@ use quote::quote;
 
 use crate::Opcode;
 
+/// Sentinel discriminant: no instruction matches this 32-bit index cell.
+pub const DISC_INVALID: u8 = 0xFE;
+/// Sentinel discriminant: cell is ambiguous at the index bits (some
+/// candidate has fixed encoding bits outside opcode/funct3/funct7) and must
+/// go through the decision-tree fallback.
+pub const DISC_SLOW: u8 = 0xFF;
+
+/// Bits of a 32-bit instruction covered by the flat table index:
+/// opcode (0-6, low two implied 0b11), funct3 (12-14), funct7 (25-31).
+const KNOWN_MASK: u32 = 0xFE00_707F;
+
+/// Build a 2^15-entry table indexed by opcode[6:2] | funct3 << 5 | funct7 << 8
+/// mapping each cell to an exact discriminant or a sentinel. Exactness is
+/// preserved: a cell only gets a discriminant when exactly one instruction
+/// matches it and all of that instruction's fixed bits lie inside the index.
+pub fn generate_lookup_table32(uncompressed: &[&mut Opcode]) -> TokenStream {
+    let mapping = uncompressed
+        .iter()
+        .map(|o| {
+            let (mask, value) = o.mask_match();
+            let d = o.discriminant.unwrap();
+            assert!(d < DISC_INVALID, "discriminant collides with sentinel");
+            (d, mask, value)
+        })
+        .collect::<Vec<_>>();
+
+    let mut table = vec![DISC_INVALID; 1 << 15];
+    for (idx, cell) in table.iter_mut().enumerate() {
+        let idx = idx as u32;
+        let known = 0b11 | ((idx & 0x1F) << 2) | (((idx >> 5) & 0x7) << 12) | ((idx >> 8) << 25);
+
+        let mut exact = None;
+        let mut ambiguous = false;
+        for &(d, mask, value) in &mapping {
+            let m_in = mask & KNOWN_MASK;
+            if known & m_in == value & m_in {
+                if mask & !KNOWN_MASK == 0 {
+                    ambiguous |= exact.replace(d).is_some();
+                } else {
+                    ambiguous = true;
+                }
+            }
+        }
+
+        *cell = match (exact, ambiguous) {
+            (Some(d), false) => d,
+            (None, false) => DISC_INVALID,
+            _ => DISC_SLOW,
+        };
+    }
+
+    quote! { [ #(#table),* ] }
+}
+
 pub fn generate_lookup_table(compressed: &[&mut Opcode]) -> TokenStream {
     let mapping = compressed
         .iter()
