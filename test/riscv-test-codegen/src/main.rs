@@ -30,7 +30,7 @@ fn main() {
     }
     let output = syn::parse_quote! {
         #![cfg(test)]
-        use riscv_kernel_linux::MockLinux;
+        use riscv_kernel_linux::MockLinux32;
         use riscv_vm::machine::Machine;
 
         #(#tests)*
@@ -57,7 +57,7 @@ fn generate_test_for_artifact(artifact: &Path) -> TokenStream {
         fn #test_name() {
             let program = include_bytes!(#program_file);
 
-            let mut machine = Machine::new(MockLinux::default());
+            let mut machine = Machine::new(MockLinux32::default());
             machine.kernel.load_static_elf(&mut machine.hart, &mut machine.mem, program, &[], &[]);
             let res = machine.run();
             assert!(res.is_ok(), "Test failed: {}", res.unwrap_err());

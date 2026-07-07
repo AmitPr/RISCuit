@@ -2,22 +2,28 @@ use std::error::Error;
 
 use crate::{
     error::MachineError,
-    hart::Hart32,
-    memory::{Memory, Memory32},
+    hart::{Execute, Hart, Xlen},
+    memory::Memory,
 };
 
+/// The OS personality of a machine: gets control on ecall/ebreak.
+///
+/// `Xlen` fixes the register width and (through the `Addr` equality bound)
+/// makes it impossible to pair a hart with a memory of the wrong width.
 pub trait Kernel {
+    type Xlen: Execute;
+    type Memory: Memory<Addr = <Self::Xlen as Xlen>::U>;
     type Error: Error;
-    type Memory: Memory;
+
     fn syscall(
         &mut self,
-        hart: &mut Hart32,
+        hart: &mut Hart<Self::Xlen>,
         mem: &mut Self::Memory,
     ) -> Result<StepResult, MachineError<Self::Error>>;
 
     fn ebreak(
         &mut self,
-        _hart: &mut Hart32,
+        _hart: &mut Hart<Self::Xlen>,
         _mem: &mut Self::Memory,
     ) -> Result<StepResult, MachineError<Self::Error>> {
         Ok(StepResult::Halt)
@@ -41,25 +47,32 @@ impl MachineState {
     }
 }
 
-pub struct Machine<K: Kernel<Memory: Memory<Addr = u32>>> {
-    pub hart: Hart32,
+pub struct Machine<K: Kernel> {
+    pub hart: Hart<K::Xlen>,
     pub mem: K::Memory,
     pub kernel: K,
     pub state: MachineState,
 }
 
-impl<K: Kernel<Memory = Memory32>> Machine<K> {
+impl<K: Kernel> Machine<K>
+where
+    K::Memory: Default,
+{
     pub fn new(kernel: K) -> Self {
+        Self::with_memory(kernel, K::Memory::default())
+    }
+}
+
+impl<K: Kernel> Machine<K> {
+    pub fn with_memory(kernel: K, mem: K::Memory) -> Self {
         Self {
-            hart: Hart32::new(),
-            mem: Memory32::new(),
+            hart: Hart::new(),
+            mem,
             kernel,
             state: MachineState::Running,
         }
     }
-}
 
-impl<K: Kernel<Memory: Memory<Addr = u32>>> Machine<K> {
     pub fn step(&mut self) -> Result<(), MachineError<K::Error>> {
         match self.hart.step(&mut self.mem, &mut self.kernel)? {
             StepResult::Ok => Ok(()),

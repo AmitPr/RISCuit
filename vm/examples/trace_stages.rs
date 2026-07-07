@@ -12,7 +12,7 @@
 use std::hint::black_box;
 use std::time::Instant;
 
-use riscv_kernel_linux::MockLinux;
+use riscv_kernel_linux::MockLinux32;
 use riscv_vm::machine::Machine;
 use riscv_vm::memory::Memory;
 use riscv_vm::riscv_inst::codegen::rv32imasc::Rv32IMASC;
@@ -51,7 +51,7 @@ fn main() {
     println!("tsc ~{:.2} GHz", hz / 1e9);
 
     // Capture (pc, raw) trace from a real run.
-    let mut machine = Machine::new(MockLinux::new(false));
+    let mut machine = Machine::new(MockLinux32::new(false));
     machine
         .kernel
         .load_static_elf(&mut machine.hart, &mut machine.mem, &elf, &[], &[]);
@@ -60,7 +60,7 @@ fn main() {
     while pcs.len() < n {
         let pc = machine.hart.pc;
         pcs.push(pc);
-        raws.push(machine.mem.load::<u32>(pc));
+        raws.push(machine.mem.load::<u32>(pc).unwrap());
         machine.step().expect("step failed");
         if machine.state == riscv_vm::machine::MachineState::Halted {
             break;
@@ -77,7 +77,7 @@ fn main() {
     let mem = &machine.mem;
     bench("fetch", n, hz, 5, || {
         for &pc in &pcs {
-            black_box(mem.load::<u32>(black_box(pc)));
+            black_box(mem.load::<u32>(black_box(pc)).unwrap());
         }
     });
 
@@ -107,14 +107,14 @@ fn main() {
     // Stage 2: fetch + decode, execution order.
     bench("fetch+decode", n, hz, 5, || {
         for &pc in &pcs {
-            black_box(Rv32IMASC::parse(mem.load::<u32>(black_box(pc))));
+            black_box(Rv32IMASC::parse(mem.load::<u32>(black_box(pc)).unwrap()));
         }
     });
 
     // Stage 3: the real thing, Hart32::step in a tight loop.
     let elf2 = elf.clone();
     bench("step_direct", n, hz, 3, || {
-        let mut m = Machine::new(MockLinux::new(false));
+        let mut m = Machine::new(MockLinux32::new(false));
         m.kernel
             .load_static_elf(&mut m.hart, &mut m.mem, &elf2, &[], &[]);
         for _ in 0..n {
@@ -127,7 +127,7 @@ fn main() {
 
     // Stage 4: through Machine::run-style stepping (state check per inst).
     bench("machine_step", n, hz, 3, || {
-        let mut m = Machine::new(MockLinux::new(false));
+        let mut m = Machine::new(MockLinux32::new(false));
         m.kernel
             .load_static_elf(&mut m.hart, &mut m.mem, &elf2, &[], &[]);
         for _ in 0..n {

@@ -5,7 +5,7 @@
 //! execution width saturates.
 use std::time::Instant;
 
-use riscv_kernel_linux::MockLinux;
+use riscv_kernel_linux::MockLinux32;
 use riscv_vm::machine::Machine;
 
 fn main() {
@@ -15,7 +15,7 @@ fn main() {
     let elf = std::fs::read(&path).expect("Failed to read ELF file");
 
     let mk = || {
-        let mut m = Machine::new(MockLinux::new(false));
+        let mut m = Machine::new(MockLinux32::new(false));
         m.kernel
             .load_static_elf(&mut m.hart, &mut m.mem, &elf, &[], &[]);
         m

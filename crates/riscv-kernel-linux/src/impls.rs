@@ -1,23 +1,63 @@
+//! Syscall implementations, generic over register width.
+//!
+//! Handlers take `u64`-normalized arguments (zero-extended from `X::U` at
+//! dispatch) and return `Result<u64, errno>`; the dispatcher sign-truncates
+//! errno returns back to width. ABI structs that contain pointers/longs are
+//! parameterized by `X::U`.
 use std::ffi::{CStr, CString};
 
-use riscv_vm::memory::{Memory, Memory32};
+use riscv_vm::memory::Memory;
 
-use crate::MockLinux;
+use crate::{KernelXlen, MockLinux, PAGE_SIZE};
 
-impl MockLinux {
-    pub(crate) fn ioctl(&mut self, _fd: i32, _request: u32) -> Result<u32, i32> {
+impl<X: KernelXlen> MockLinux<X> {
+    pub(crate) fn ioctl(&mut self, _fd: i32, _request: u64) -> Result<u64, i32> {
         // just return 0 for now
         Ok(0)
     }
 
+    pub(crate) fn readlinkat(
+        &mut self,
+        mem: &mut X::Memory,
+        _dirfd: i32,
+        pathname: u64,
+        buf: u64,
+        bufsiz: u64,
+    ) -> Result<u64, i32> {
+        let pathname = mem
+            .bytes_null_terminated(pathname, None)
+            .map_err(|_| libc_riscv32::EINVAL)?;
+        let pathname = CStr::from_bytes_with_nul(pathname)
+            .map(|s| s.to_str().unwrap_or(""))
+            .map_err(|_| libc_riscv32::EINVAL)?;
+
+        match pathname {
+            "/proc/self/exe" => {
+                let fake_path = "/tmp/main".as_bytes();
+
+                let cstr = CString::new(fake_path).map_err(|_| libc_riscv32::EINVAL)?;
+                let as_bytes = cstr.as_bytes_with_nul();
+                // readlink doesn't necessarily NULL-terminate.
+                let as_bytes: &[u8] = &as_bytes[..as_bytes.len().min(bufsiz as usize)];
+
+                mem.copy_to(buf, as_bytes)
+                    .map_err(|_| libc_riscv32::EFAULT)?;
+
+                // Always return the full length
+                Ok(fake_path.len() as u64)
+            }
+            _ => Err(libc_riscv32::ENOENT),
+        }
+    }
+
     pub(crate) fn write(
         &mut self,
-        mem: &Memory32,
+        mem: &X::Memory,
         fd: i32,
-        buf: u32,
-        count: u32,
-    ) -> Result<u32, i32> {
-        let slice = mem.slice(buf, count).map_err(|_| {
+        buf: u64,
+        count: u64,
+    ) -> Result<u64, i32> {
+        let slice = mem.slice::<u8>(buf, count).map_err(|_| {
             tracing::warn!("write: buffer read would overflow guest memory");
             libc_riscv32::EFAULT
         })?;
@@ -44,93 +84,62 @@ impl MockLinux {
 
     pub(crate) fn writev(
         &mut self,
-        mem: &Memory32,
+        mem: &X::Memory,
         fd: i32,
-        iov: u32,
+        iov: u64,
         iovcnt: i32,
-    ) -> Result<u32, i32> {
+    ) -> Result<u64, i32> {
         #[repr(C)]
-        struct Iovec {
-            iov_base: u32,
-            iov_len: u32,
+        struct IoVec<U> {
+            base: U,
+            len: U,
         }
         if iovcnt < 0 {
             return Err(libc_riscv32::EINVAL);
         }
 
         let iovs = mem
-            .slice::<Iovec>(iov, iovcnt as u32)
+            .slice::<IoVec<X::U>>(iov, iovcnt as u64)
             .map_err(|_| libc_riscv32::EFAULT)?;
 
-        let total = iovs.iter().try_fold(0u32, |total, iov| {
-            let count = self.write(mem, fd, iov.iov_base, iov.iov_len)?;
+        let total = iovs.iter().try_fold(0u64, |total, iov| {
+            let count = self.write(mem, fd, X::to_u64(iov.base), X::to_u64(iov.len))?;
             total.checked_add(count).ok_or(libc_riscv32::EINVAL)
         })?;
 
         Ok(total)
     }
 
-    pub(crate) fn readlinkat(
-        &mut self,
-        mem: &mut Memory32,
-        _dirfd: i32,
-        pathname: u32,
-        buf: u32,
-        bufsiz: usize,
-    ) -> Result<u32, i32> {
-        let pathname = mem
-            .bytes_null_terminated(pathname, None)
-            .map_err(|_| libc_riscv32::EINVAL)?;
-        let pathname = CStr::from_bytes_with_nul(pathname)
-            .map(|s| s.to_str().unwrap_or(""))
-            .map_err(|_| libc_riscv32::EINVAL)?;
-
-        match pathname {
-            "/proc/self/exe" => {
-                let fake_path = "/tmp/main".as_bytes();
-
-                let cstr = CString::new(fake_path).map_err(|_| libc_riscv32::EINVAL)?;
-                let as_bytes = cstr.as_bytes_with_nul();
-                // readlink doesn't necessarily NULL-terminate.
-                let as_bytes: &[u8] = &as_bytes[..as_bytes.len().min(bufsiz)];
-
-                mem.copy_to(buf, as_bytes)
-                    .map_err(|_| libc_riscv32::EFAULT)?;
-
-                // Always return the full length
-                Ok(fake_path.len() as u32)
-            }
-            _ => Err(libc_riscv32::ENOENT),
-        }
-    }
-
-    pub(crate) fn gettid(&mut self) -> Result<u32, i32> {
+    pub(crate) fn gettid(&mut self) -> Result<u64, i32> {
         Ok(0x1)
     }
 
-    pub(crate) fn set_tid_address(&mut self, mem: &mut Memory32, tidptr: u32) -> Result<u32, i32> {
+    pub(crate) fn set_tid_address(&mut self, mem: &mut X::Memory, tidptr: u64) -> Result<u64, i32> {
         let tid = self.gettid()?;
-        mem.store(tidptr, tid);
+        mem.store_at::<u32>(tidptr, tid as u32)
+            .map_err(|_| libc_riscv32::EFAULT)?;
 
         Ok(tid)
     }
 
-    pub(crate) fn getpid(&mut self) -> Result<u32, i32> {
+    pub(crate) fn getpid(&mut self) -> Result<u64, i32> {
         Ok(0x1)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn futex(
         &mut self,
-        mem: &mut Memory32,
-        uaddr: u32,
+        mem: &mut X::Memory,
+        uaddr: u64,
         op: u32,
         val: u32,
-        _utime: u32,
-        _uaddr2: u32,
+        _utime: u64,
+        _uaddr2: u64,
         val3: u32,
-    ) -> Result<u32, i32> {
-        let futex_word = mem.load::<u32>(uaddr);
+    ) -> Result<u64, i32> {
+        let futex_word = mem
+            .load_at::<u32>(uaddr)
+            .map_err(|_| libc_riscv32::EFAULT)?;
         tracing::trace!(
         "futex: uaddr={:x}({futex_word:x}) op={op} val={val} utime={:x} uaddr2={:x} val3={val3:x}",
         uaddr,
@@ -149,23 +158,18 @@ impl MockLinux {
                 }
             }
         }
-        // First pass: set arguments
-        // match cmd {
-        //     libc_riscv32::FUTEX_WAIT | libc_riscv32::FUTEX_WAKE => {
-        //         val3 = libc_riscv32::FUTEX_BITSET_MATCH_ANY
-        //     }
-        //     _ => {}
-        // }
         match cmd {
             libc_riscv32::FUTEX_WAIT => {
                 // TODO: Seems like there's an issue where futex is erroneously used
                 // in the rust exit code, causing a deadlock... Temporary fix:
-                mem.store::<u32>(uaddr, 0);
+                mem.store_at::<u32>(uaddr, 0)
+                    .map_err(|_| libc_riscv32::EFAULT)?;
                 Ok(0)
             }
             libc_riscv32::FUTEX_WAIT_BITSET => {
                 // TODO: See above
-                mem.store::<u32>(uaddr, 0);
+                mem.store_at::<u32>(uaddr, 0)
+                    .map_err(|_| libc_riscv32::EFAULT)?;
                 Ok(0)
             }
             // TODO: No-op right now.
@@ -180,37 +184,37 @@ impl MockLinux {
 
     pub(crate) fn set_robust_list(
         &mut self,
-        _mem: &mut Memory32,
-        _head: u32,
-        _len: u32,
-    ) -> Result<u32, i32> {
+        _mem: &mut X::Memory,
+        _head: u64,
+        _len: u64,
+    ) -> Result<u64, i32> {
         Ok(0)
     }
 
-    pub fn tgkill(&mut self, _tgid: i32, _pid: i32, _sig: i32) -> Result<u32, i32> {
+    pub(crate) fn tgkill(&mut self, _tgid: i32, _pid: i32, _sig: i32) -> Result<u64, i32> {
         Ok(0)
     }
 
-    pub fn rt_sigaction(
+    pub(crate) fn rt_sigaction(
         &mut self,
-        _mem: &Memory32,
-        _sig: u32,
-        _act: u32,
-        _oldact: u32,
-        _sigsetsize: u32,
-    ) -> Result<u32, i32> {
+        _mem: &X::Memory,
+        _sig: u64,
+        _act: u64,
+        _oldact: u64,
+        _sigsetsize: u64,
+    ) -> Result<u64, i32> {
         // stubbed out -- this is called w/ SIGPIPE during rust runtime startup
         Ok(0)
     }
 
-    pub fn rt_sigprocmask(
+    pub(crate) fn rt_sigprocmask(
         &mut self,
-        mem: &mut Memory32,
+        mem: &mut X::Memory,
         _how: u32,
-        _set: u32,
-        oldset: u32,
-        sigsetsize: u32,
-    ) -> Result<u32, i32> {
+        _set: u64,
+        oldset: u64,
+        sigsetsize: u64,
+    ) -> Result<u64, i32> {
         if oldset != 0 {
             mem.memset(oldset, 0, sigsetsize)
                 .map_err(|_| libc_riscv32::EFAULT)?;
@@ -219,10 +223,9 @@ impl MockLinux {
         Ok(0)
     }
 
-    pub(crate) fn brk(&mut self, mem: &mut Memory32, addr: u32) -> Result<u32, i32> {
-        // TODO: Move brk / mmap_top to be managed by Kernel struct.
+    pub(crate) fn brk(&mut self, mem: &mut X::Memory, addr: u64) -> Result<u64, i32> {
         // TODO: OOM detection/handling
-        let old_brk = mem.brk;
+        let old_brk = self.brk;
         let new_brk = addr;
         tracing::trace!("brk: new_brk={:#x} cur_brk={old_brk:#x}", addr);
 
@@ -232,11 +235,22 @@ impl MockLinux {
             return Ok(old_brk);
         }
 
-        if new_brk >= mem.mmap_top {
+        // brk may not grow into the mmap region (rv32 layout) or the stack
+        // reservation (rv64 layout).
+        let limit = if X::MMAP_GROWS_DOWN {
+            self.mmap_cursor
+        } else {
+            self.brk_limit
+        };
+        if new_brk >= limit {
             return Ok(old_brk);
         }
 
-        mem.brk = new_brk;
+        if mem.grow_to(new_brk).is_err() {
+            return Ok(old_brk);
+        }
+
+        self.brk = new_brk;
         // Zero memory
         let base = new_brk.min(old_brk);
         let size = new_brk.abs_diff(old_brk);
@@ -247,46 +261,50 @@ impl MockLinux {
 
         // brk returns the new program break on success
         Ok(new_brk)
-        // Ok(0)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn mmap(
         &mut self,
-        mem: &mut Memory32,
-        addr: u32,
-        len: u32,
-        _prot: u32,
-        _flags: u32,
+        mem: &mut X::Memory,
+        addr: u64,
+        len: u64,
+        _prot: u64,
+        _flags: u64,
         fd: i32,
-        _offset: u32,
-    ) -> Result<u32, i32> {
+        _offset: u64,
+    ) -> Result<u64, i32> {
         tracing::trace!(
             "mmap: addr={addr:#x} len={len:#x} prot={_prot:#x} flags={_flags:#x} fd={fd} offset={_offset:#x}"
         );
 
-        let size = (len + 0xFFF) & !0xFFF;
+        let size = (len + (PAGE_SIZE - 1)) & !(PAGE_SIZE - 1);
         if fd != -1 || size == 0 {
             tracing::warn!("mmap: invalid fd or size");
             return Err(libc_riscv32::MAP_FAILED);
         }
 
-        // Align up to page size
         let map_addr = if addr != 0 {
             // Align hint downwards
-            addr & !0xFFF
+            addr & !(PAGE_SIZE - 1)
+        } else if X::MMAP_GROWS_DOWN {
+            self.mmap_cursor.saturating_sub(size) & !(PAGE_SIZE - 1)
         } else {
-            // Use mmap_top, aligning downwards
-            mem.mmap_top.saturating_sub(size) & !0xFFF
+            self.mmap_cursor
         };
 
-        if map_addr.checked_add(size).is_none() {
+        let Some(end) = map_addr.checked_add(size) else {
             tracing::warn!("mmap: address overflow");
             return Err(libc_riscv32::MAP_FAILED);
+        };
+
+        if mem.grow_to(end).is_err() {
+            tracing::warn!("mmap: out of guest address space");
+            return Err(libc_riscv32::ENOMEM);
         }
 
         if addr == 0 {
-            mem.mmap_top = map_addr;
+            self.mmap_cursor = if X::MMAP_GROWS_DOWN { map_addr } else { end };
         }
 
         // Zero out the region
@@ -302,36 +320,38 @@ impl MockLinux {
 
     pub(crate) fn mprotect(
         &mut self,
-        _mem: &Memory32,
-        _addr: u32,
-        _len: u32,
-        _prot: u32,
-    ) -> Result<u32, i32> {
+        _mem: &X::Memory,
+        _addr: u64,
+        _len: u64,
+        _prot: u64,
+    ) -> Result<u64, i32> {
         Ok(0)
     }
 
     pub(crate) fn getrlimit(
         &mut self,
-        mem: &mut Memory32,
+        mem: &mut X::Memory,
         resource: u32,
-        rlim_ptr: u32,
-    ) -> Result<u32, i32> {
+        rlim_ptr: u64,
+    ) -> Result<u64, i32> {
         #[repr(C)]
-        struct RLimit {
-            rlim_cur: u32,
-            rlim_max: u32,
+        struct RLimit<U> {
+            rlim_cur: U,
+            rlim_max: U,
         }
 
+        // All-ones at width == RLIM_INFINITY.
+        let infinity = X::from_i64(-1);
         let rlim = match resource {
             // RLIMIT_STACK = 3, 8MB of stack
             3 => RLimit {
-                rlim_cur: 0x800000,
-                rlim_max: 0x800000,
+                rlim_cur: X::from_u64(crate::STACK_RESERVE),
+                rlim_max: X::from_u64(crate::STACK_RESERVE),
             },
             // For other resources, return "unlimited"
             _ => RLimit {
-                rlim_cur: libc_riscv32::RLIM_INFINITY,
-                rlim_max: libc_riscv32::RLIM_INFINITY,
+                rlim_cur: infinity,
+                rlim_max: infinity,
             },
         };
         mem.copy_to(rlim_ptr, &[rlim])
@@ -342,59 +362,51 @@ impl MockLinux {
 
     pub(crate) fn riscv_hwprobe(
         &mut self,
-        _mem: &Memory32,
-        _pairs: u32,
-        _pair_count: u32,
-        _cpusetsize: u32,
-        _cpus: u32,
-        _flags: u32,
-    ) -> Result<u32, i32> {
+        _mem: &X::Memory,
+        _pairs: u64,
+        _pair_count: u64,
+        _cpusetsize: u64,
+        _cpus: u64,
+        _flags: u64,
+    ) -> Result<u64, i32> {
         Err(libc_riscv32::ENOSYS)
     }
 
     pub(crate) fn getrandom(
         &mut self,
-        mem: &mut Memory32,
-        buf: u32,
-        len: u32,
-        _flags: u32,
-    ) -> Result<u32, i32> {
+        mem: &mut X::Memory,
+        buf: u64,
+        len: u64,
+        _flags: u64,
+    ) -> Result<u64, i32> {
         // TODO: Stubbed to zero buffer
         mem.memset(buf, 0, len).map_err(|_| libc_riscv32::EFAULT)?;
-        // let slice = mem
-        //     .slice::<u8>(buf, len)
-        //     .map_err(|_| libc_riscv32::EFAULT)?;
-
-        // let mut rng = rand::thread_rng();
-        // for byte in slice {
-        //     *byte = rng.gen();
-        // }
 
         Ok(len)
     }
 
     pub(crate) fn statx(
         &mut self,
-        _mem: &Memory32,
+        _mem: &X::Memory,
         _dirfd: i32,
-        _pathname: u32,
-        _flags: u32,
-        _mask: u32,
-        _statxbuf: u32,
-    ) -> Result<u32, i32> {
+        _pathname: u64,
+        _flags: u64,
+        _mask: u64,
+        _statxbuf: u64,
+    ) -> Result<u64, i32> {
         // stubbed out
         Ok(0)
     }
 
-    pub(crate) fn ppoll_time64(
+    pub(crate) fn ppoll(
         &mut self,
-        mem: &Memory32,
-        fds: u32,
-        nfds: u32,
-        _tsp: u32,
-        _sigmask: u32,
-        _sigsetsize: u32,
-    ) -> Result<u32, i32> {
+        mem: &X::Memory,
+        fds: u64,
+        nfds: u64,
+        _tsp: u64,
+        _sigmask: u64,
+        _sigsetsize: u64,
+    ) -> Result<u64, i32> {
         #[repr(C)]
         struct PollFd {
             fd: i32,

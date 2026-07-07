@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use clap::Parser;
-use riscv_kernel_linux::MockLinux;
+use riscv_kernel_linux::MockLinux32;
 use riscv_vm::{
     machine::{Machine, MachineState},
     memory::Memory,
@@ -38,7 +38,7 @@ fn main() {
 
     let filename = args.elf_path.split('/').last().unwrap();
 
-    let mut machine = Machine::new(MockLinux::new(true));
+    let mut machine = Machine::new(MockLinux32::new(true));
     let elf =
         machine
             .kernel
@@ -59,7 +59,7 @@ enum Mode {
 }
 
 struct Debugger {
-    machine: Machine<MockLinux>,
+    machine: Machine<MockLinux32>,
     mode: Mode,
     syms: BTreeMap<u32, String>,
     last_sym: Option<String>,
@@ -67,7 +67,7 @@ struct Debugger {
 }
 
 impl Debugger {
-    pub fn new(machine: Machine<MockLinux>, elf: goblin::elf::Elf, breakpoints: Vec<u32>) -> Self {
+    pub fn new(machine: Machine<MockLinux32>, elf: goblin::elf::Elf, breakpoints: Vec<u32>) -> Self {
         let syms = elf
             .syms
             .iter()
@@ -158,7 +158,7 @@ impl Debugger {
                             }
                             let addr = addr.unwrap();
                             let val = self.machine.mem.load::<u32>(addr);
-                            tracing::info!("0x{:08x}: 0x{:08x}", addr, val);
+                            tracing::info!("0x{:08x}: 0x{:08x}", addr, val.unwrap_or(0));
                         }
                         _ => tracing::info!("Unknown command"),
                     }
