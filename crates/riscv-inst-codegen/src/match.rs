@@ -134,9 +134,9 @@ pub fn generate_opcode_parser(
         /// Decision-tree decode for 32-bit encodings whose fixed bits extend
         /// beyond the opcode/funct3/funct7 table index (e.g. ecall/ebreak).
         ///
-        /// Cold: interpreter hot loops hit the flat tables; keeping this
-        /// call site cold lets register allocation favor the fast path.
-        #[cold]
+        /// `#[inline]` so the symbol is local to the caller's codegen
+        /// unit (a direct call instead of one through a GOT register).
+        #[inline]
         pub fn parse_slow(inst: u32) -> Option<#return_ty> {
             #parser
         }
