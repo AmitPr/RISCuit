@@ -69,17 +69,28 @@ impl Hart32 {
         mem: &mut K::Memory,
         kernel: &mut K,
     ) -> Result<(), MachineError<K::Error>> {
-        // pc lives in a register; self.pc is stored per instruction but
-        // never reloaded.
+        // pc and the instruction count live in registers: self.pc is stored
+        // per instruction but never reloaded; inst_count is flushed once on
+        // exit and is stale mid-run (a per-instruction RMW is a loop-carried
+        // dependence).
         let mut pc = self.pc;
-        loop {
+        let mut count = 0u64;
+        let result = loop {
             let inst = mem.load::<u32>(pc);
-            let op = Rv32IMASC::parse(inst).ok_or(HartError::InvalidInst { addr: pc, inst })?;
-            match self.exec_op_at(op, inst, pc, mem, kernel)? {
-                Exec::Next(next_pc) => pc = next_pc,
-                Exec::Halt => return Ok(()),
+            let Some(op) = Rv32IMASC::parse(inst) else {
+                break Err(HartError::InvalidInst { addr: pc, inst }.into());
+            };
+            match self.exec_op_at(op, inst, pc, mem, kernel) {
+                Ok(Exec::Next(next_pc)) => {
+                    count += 1;
+                    pc = next_pc;
+                }
+                Ok(Exec::Halt) => break Ok(()),
+                Err(e) => break Err(e),
             }
-        }
+        };
+        self.inst_count += count;
+        result
     }
 
     #[inline(always)]
@@ -94,7 +105,11 @@ impl Hart32 {
             inst,
         })?;
 
-        self.exec_op(op, inst, mem, kernel)
+        let res = self.exec_op(op, inst, mem, kernel)?;
+        if matches!(res, StepResult::Ok) {
+            self.inst_count += 1;
+        }
+        Ok(res)
     }
 
     /// Execute an already-decoded instruction.
@@ -172,9 +187,12 @@ impl Hart32 {
                 let $rs1 = reg!($inst.$rs1(inst));
                 let $rs2 = reg!($inst2.$rs2(inst));
                 let offset = $inst.imm(inst);
-                if $body {
-                    next_pc = pc.wrapping_add_signed(offset);
-                }
+                // Select, not branch: guest branch outcomes are data-driven.
+                next_pc = if $body {
+                    pc.wrapping_add_signed(offset)
+                } else {
+                    next_pc
+                };
             }};
         }
 
@@ -529,7 +547,6 @@ impl Hart32 {
             }
         }
 
-        self.inst_count += 1;
         self.pc = next_pc;
 
         Ok(Exec::Next(next_pc))
