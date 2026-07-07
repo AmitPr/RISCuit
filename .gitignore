@@ -3,3 +3,5 @@ riscv/*/target
 *.s
 
 .DS_Store
+# Claude Code session worktrees/settings
+.claude/
