@@ -41,7 +41,13 @@ fn main() {
             .kernel
             .load_static_elf(&mut machine.hart, &mut machine.mem, &elf, &[], &[]);
         let t2 = Instant::now();
+        #[cfg(not(feature = "tco"))]
         machine.run().expect("Failed to run");
+        #[cfg(feature = "tco")]
+        machine
+            .hart
+            .run_threaded(&mut machine.mem, &mut machine.kernel)
+            .expect("Failed to run");
         let t3 = Instant::now();
 
         new_times.push(t1.duration_since(t0).as_secs_f64());

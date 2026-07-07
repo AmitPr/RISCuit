@@ -7,6 +7,7 @@ use crate::{
 };
 
 /// A simple CPU for RV32I instructions
+#[repr(C)]
 pub struct Hart32 {
     // Hot state first: regs + pc + inst_count fit in the first few cache
     // lines. The 16KiB CSR file is rarely touched and lives at the end.
@@ -36,11 +37,12 @@ impl Hart32 {
         self.regs[if idx == 0 { 0 } else { idx }]
     }
 
-    /// Write a register (except x0).
+    /// Write a register. x0 is written unconditionally and then re-zeroed:
+    /// two independent stores beat a data-dependent select on the value.
     #[inline(always)]
     pub const fn set_reg(&mut self, r: Reg, val: u32) {
-        let idx = r as usize;
-        self.regs[idx] = if idx == 0 { 0 } else { val };
+        self.regs[r as usize] = val;
+        self.regs[0] = 0;
     }
 
     /// Dump registers to stdout
@@ -71,10 +73,17 @@ impl Hart32 {
         mem: &mut K::Memory,
         kernel: &mut K,
     ) -> Result<(), MachineError<K::Error>> {
+        // Carry pc in a register around the loop: exec_op_at still stores
+        // self.pc for external visibility (kernel, debugger), but the loop
+        // never reloads it, keeping the fetch address off the store-to-load
+        // forwarding path.
+        let mut pc = self.pc;
         loop {
-            match self.step_inner(mem, kernel)? {
-                StepResult::Ok => {}
-                StepResult::Halt => return Ok(()),
+            let inst = mem.load::<u32>(pc);
+            let op = Rv32IMASC::parse(inst).ok_or(HartError::InvalidInst { addr: pc, inst })?;
+            match self.exec_op_at(op, inst, pc, mem, kernel)? {
+                Exec::Next(next_pc) => pc = next_pc,
+                Exec::Halt => return Ok(()),
             }
         }
     }
@@ -91,8 +100,41 @@ impl Hart32 {
             inst,
         })?;
 
+        self.exec_op(op, inst, mem, kernel)
+    }
+
+    /// Execute an already-decoded instruction. When `op` is a compile-time
+    /// constant (as in the threaded dispatcher), the match below folds to a
+    /// single arm.
+    #[inline(always)]
+    fn exec_op<K: Kernel<Memory: Memory<Addr = u32>>>(
+        &mut self,
+        op: Rv32IMASC,
+        inst: u32,
+        mem: &mut K::Memory,
+        kernel: &mut K,
+    ) -> Result<StepResult, MachineError<K::Error>> {
+        match self.exec_op_at(op, inst, self.pc, mem, kernel)? {
+            Exec::Next(_) => Ok(StepResult::Ok),
+            Exec::Halt => Ok(StepResult::Halt),
+        }
+    }
+
+    /// Like [`Self::exec_op`], but the current pc is passed (and the next pc
+    /// returned) by value so a threaded dispatcher can keep it in a register
+    /// across tail calls instead of round-tripping through memory.
+    /// `self.pc` is still updated on completion.
+    #[inline(always)]
+    fn exec_op_at<K: Kernel<Memory: Memory<Addr = u32>>>(
+        &mut self,
+        op: Rv32IMASC,
+        inst: u32,
+        pc: u32,
+        mem: &mut K::Memory,
+        kernel: &mut K,
+    ) -> Result<Exec, MachineError<K::Error>> {
         let pc_inc = if inst & 0b11 == 0b11 { 4 } else { 2 };
-        let mut next_pc = self.pc.wrapping_add(pc_inc);
+        let mut next_pc = pc.wrapping_add(pc_inc);
 
         macro_rules! reg {
             ($reg: expr) => {
@@ -141,7 +183,7 @@ impl Hart32 {
                 let $rs2 = reg!($inst2.$rs2(inst));
                 let offset = $inst.imm(inst);
                 if $body {
-                    next_pc = self.pc.wrapping_add_signed(offset);
+                    next_pc = pc.wrapping_add_signed(offset);
                 }
             }};
         }
@@ -184,10 +226,10 @@ impl Hart32 {
 
         match op {
             Rv32IMASC::Lui(lui) => imm_op!(|lui.imm| imm),
-            Rv32IMASC::Auipc(auipc) => imm_op!(|auipc.imm| self.pc.wrapping_add_signed(imm)),
+            Rv32IMASC::Auipc(auipc) => imm_op!(|auipc.imm| pc.wrapping_add_signed(imm)),
             Rv32IMASC::Jal(jal) => imm_op!(|jal.imm| {
                 let res = next_pc;
-                next_pc = self.pc.wrapping_add_signed(imm);
+                next_pc = pc.wrapping_add_signed(imm);
                 res
             }),
             Rv32IMASC::Jalr(jalr) => reg_imm_op!(|jalr.rs1, jalr.imm| {
@@ -252,15 +294,15 @@ impl Hart32 {
             Rv32IMASC::FenceI(_) => {}
             Rv32IMASC::Ecall(_) => match kernel.syscall(self, mem)? {
                 StepResult::Ok => {}
-                res => return Ok(res),
+                StepResult::Halt => return Ok(Exec::Halt),
             },
             Rv32IMASC::Ebreak(_) => match kernel.ebreak(self, mem)? {
                 StepResult::Ok => {}
-                res => return Ok(res),
+                StepResult::Halt => return Ok(Exec::Halt),
             },
             Rv32IMASC::Unimp(_) => {
                 return Err(HartError::IllegalInst {
-                    addr: self.pc,
+                    addr: pc,
                     inst,
                 }
                 .into())
@@ -327,17 +369,17 @@ impl Hart32 {
                     }
                 }
             ),
-            Rv32IMASC::Uret(_) => return Err(HartError::unimplemented(self.pc, inst).into()),
-            Rv32IMASC::Sret(_) => return Err(HartError::unimplemented(self.pc, inst).into()),
-            Rv32IMASC::Hret(_) => return Err(HartError::unimplemented(self.pc, inst).into()),
+            Rv32IMASC::Uret(_) => return Err(HartError::unimplemented(pc, inst).into()),
+            Rv32IMASC::Sret(_) => return Err(HartError::unimplemented(pc, inst).into()),
+            Rv32IMASC::Hret(_) => return Err(HartError::unimplemented(pc, inst).into()),
             Rv32IMASC::Mret(_) => {
                 // TODO: Not erroring because the ISA tests use this.
                 // But we haven't implemented privilege levels yet.
             }
-            Rv32IMASC::Dret(_) => return Err(HartError::unimplemented(self.pc, inst).into()),
-            Rv32IMASC::SfenceVm(_) => return Err(HartError::unimplemented(self.pc, inst).into()),
-            Rv32IMASC::SfenceVma(_) => return Err(HartError::unimplemented(self.pc, inst).into()),
-            Rv32IMASC::Wfi(_) => return Err(HartError::unimplemented(self.pc, inst).into()),
+            Rv32IMASC::Dret(_) => return Err(HartError::unimplemented(pc, inst).into()),
+            Rv32IMASC::SfenceVm(_) => return Err(HartError::unimplemented(pc, inst).into()),
+            Rv32IMASC::SfenceVma(_) => return Err(HartError::unimplemented(pc, inst).into()),
+            Rv32IMASC::Wfi(_) => return Err(HartError::unimplemented(pc, inst).into()),
             Rv32IMASC::Csrrw(rw) => csr_op!(|rw.csr12, rw.rs1| self.csrs[csr12] = rs1),
             Rv32IMASC::Csrrs(rs) => csr_op!(|rs.csr12, rs.rs1| self.csrs[csr12] |= rs1),
             Rv32IMASC::Csrrc(rc) => csr_op!(|rc.csr12, rc.rs1| self.csrs[csr12] &= !rs1),
@@ -419,7 +461,7 @@ impl Hart32 {
             Rv32IMASC::CNop(_) => {}
             Rv32IMASC::CJal(cjal) => {
                 reg!(Reg::Ra, next_pc);
-                next_pc = self.pc.wrapping_add_signed(cjal.imm(inst));
+                next_pc = pc.wrapping_add_signed(cjal.imm(inst));
             }
             Rv32IMASC::CLi(cli) => reg!(cli.rs1rd(inst), cli.imm(inst)),
             Rv32IMASC::CLui(clui) => reg!(clui.rd(inst), clui.imm(inst)),
@@ -456,16 +498,16 @@ impl Hart32 {
                 reg!(rs1rd, reg!(rs1rd) & rs2);
             }
             Rv32IMASC::CJ(cj) => {
-                next_pc = self.pc.wrapping_add_signed(cj.imm(inst));
+                next_pc = pc.wrapping_add_signed(cj.imm(inst));
             }
             Rv32IMASC::CBeqz(cbeqz) => {
                 if reg!(cbeqz.rs1(inst)) == 0 {
-                    next_pc = self.pc.wrapping_add_signed(cbeqz.imm(inst));
+                    next_pc = pc.wrapping_add_signed(cbeqz.imm(inst));
                 }
             }
             Rv32IMASC::CBnez(cbnez) => {
                 if reg!(cbnez.rs1(inst)) != 0 {
-                    next_pc = self.pc.wrapping_add_signed(cbnez.imm(inst));
+                    next_pc = pc.wrapping_add_signed(cbnez.imm(inst));
                 }
             }
             Rv32IMASC::CSlli(cslli) => {
@@ -478,7 +520,7 @@ impl Hart32 {
             Rv32IMASC::CMv(cmv) => reg!(cmv.rd(inst), reg!(cmv.rs2(inst))),
             Rv32IMASC::CEbreak(_) => match kernel.ebreak(self, mem)? {
                 StepResult::Ok => {}
-                res => return Ok(res),
+                StepResult::Halt => return Ok(Exec::Halt),
             },
             Rv32IMASC::CJalr(cjalr) => {
                 reg!(Reg::Ra, next_pc);
@@ -490,7 +532,7 @@ impl Hart32 {
             }
             Rv32IMASC::CUnimp(_) => {
                 return Err(HartError::IllegalInst {
-                    addr: self.pc,
+                    addr: pc,
                     inst,
                 }
                 .into())
@@ -500,12 +542,131 @@ impl Hart32 {
         self.inst_count += 1;
         self.pc = next_pc;
 
-        Ok(StepResult::Ok)
+        Ok(Exec::Next(next_pc))
     }
+}
+
+/// Outcome of executing one instruction via [`Hart32::exec_op_at`].
+enum Exec {
+    /// Continue at this pc.
+    Next(u32),
+    /// The kernel halted the machine.
+    Halt,
 }
 
 impl Default for Hart32 {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Direct-threaded dispatch (nightly, `tco` feature): one handler function
+/// per instruction variant, chained with `become` so every handler's frame
+/// is reused (guaranteed tail calls) and every instruction type gets its own
+/// indirect dispatch site for the branch predictor.
+///
+/// Hot state (pc + current instruction word) is threaded through the tail
+/// calls as an argument so it lives in registers, not memory. The two u32s
+/// are packed into one u64 so all handler arguments (including the hidden
+/// sret pointer for the Result) fit in the six SysV integer registers.
+#[cfg(feature = "tco")]
+mod tco {
+    use super::*;
+
+    pub type Handler<K> = fn(
+        &mut Hart32,
+        &mut <K as Kernel>::Memory,
+        &mut K,
+        &Handlers<K>,
+        u64, // (pc << 32) | inst
+    ) -> Result<(), MachineError<<K as Kernel>::Error>>;
+
+    pub struct Handlers<K: Kernel<Memory: Memory<Addr = u32>>>(pub [Handler<K>; 256]);
+
+    #[inline(always)]
+    fn pack(pc: u32, inst: u32) -> u64 {
+        ((pc as u64) << 32) | inst as u64
+    }
+
+    /// Fetch + decode the next instruction and tail-call its handler.
+    /// A macro (not a function) so each handler owns its dispatch site.
+    macro_rules! dispatch_next {
+        ($hart:ident, $mem:ident, $kernel:ident, $tbl:ident, $next_pc:ident) => {{
+            let inst = $mem.load::<u32>($next_pc);
+            let d = Rv32IMASC::decode_disc(inst);
+            become $tbl.0[d as usize]($hart, $mem, $kernel, $tbl, pack($next_pc, inst))
+        }};
+    }
+
+    fn h_op<K: Kernel<Memory: Memory<Addr = u32>>, const D: u8>(
+        hart: &mut Hart32,
+        mem: &mut K::Memory,
+        kernel: &mut K,
+        tbl: &Handlers<K>,
+        pc_inst: u64,
+    ) -> Result<(), MachineError<K::Error>> {
+        let (pc, inst) = ((pc_inst >> 32) as u32, pc_inst as u32);
+        // Discriminants passed as D come from the generated for-each macro,
+        // so they are always valid variants.
+        let op: Rv32IMASC = unsafe { core::mem::transmute(D) };
+        match hart.exec_op_at(op, inst, pc, mem, kernel)? {
+            Exec::Halt => Ok(()),
+            Exec::Next(next_pc) => dispatch_next!(hart, mem, kernel, tbl, next_pc),
+        }
+    }
+
+    fn h_slow<K: Kernel<Memory: Memory<Addr = u32>>>(
+        hart: &mut Hart32,
+        mem: &mut K::Memory,
+        kernel: &mut K,
+        tbl: &Handlers<K>,
+        pc_inst: u64,
+    ) -> Result<(), MachineError<K::Error>> {
+        let (pc, inst) = ((pc_inst >> 32) as u32, pc_inst as u32);
+        let op = Rv32IMASC::parse_slow(inst).ok_or(HartError::InvalidInst { addr: pc, inst })?;
+        match hart.exec_op_at(op, inst, pc, mem, kernel)? {
+            Exec::Halt => Ok(()),
+            Exec::Next(next_pc) => dispatch_next!(hart, mem, kernel, tbl, next_pc),
+        }
+    }
+
+    fn h_invalid<K: Kernel<Memory: Memory<Addr = u32>>>(
+        _hart: &mut Hart32,
+        _mem: &mut K::Memory,
+        _kernel: &mut K,
+        _tbl: &Handlers<K>,
+        pc_inst: u64,
+    ) -> Result<(), MachineError<K::Error>> {
+        let (pc, inst) = ((pc_inst >> 32) as u32, pc_inst as u32);
+        Err(HartError::InvalidInst { addr: pc, inst }.into())
+    }
+
+    impl<K: Kernel<Memory: Memory<Addr = u32>>> Handlers<K> {
+        pub fn new() -> Self {
+            macro_rules! set_handlers {
+                ($(($name:ident, $d:literal)),*) => {{
+                    let mut t: [Handler<K>; 256] = [h_invalid::<K> as Handler<K>; 256];
+                    $( t[$d as usize] = h_op::<K, $d>; )*
+                    t[Rv32IMASC::DISC_SLOW as usize] = h_slow::<K>;
+                    t
+                }};
+            }
+            Handlers(riscv_inst::rv32imasc_for_each_op!(set_handlers))
+        }
+    }
+
+    impl Hart32 {
+        /// Run until halt/error using guaranteed-tail-call threaded dispatch.
+        pub fn run_threaded<K: Kernel<Memory: Memory<Addr = u32>>>(
+            &mut self,
+            mem: &mut K::Memory,
+            kernel: &mut K,
+        ) -> Result<(), MachineError<K::Error>> {
+            let tbl = Handlers::<K>::new();
+            let pc = self.pc;
+            let inst = mem.load::<u32>(pc);
+            let d = Rv32IMASC::decode_disc(inst);
+            (tbl.0[d as usize])(self, mem, kernel, &tbl, pack(pc, inst))
+        }
     }
 }

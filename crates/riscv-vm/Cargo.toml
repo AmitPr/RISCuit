@@ -3,6 +3,11 @@ name = "riscv-vm"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# Direct-threaded interpreter using guaranteed tail calls.
+# Requires nightly (explicit_tail_calls).
+tco = []
+
 [dependencies]
 libc = "0.2.169"
 riscv-inst.workspace = true
