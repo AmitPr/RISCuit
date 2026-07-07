@@ -1,8 +1,9 @@
 //! Hart density probe: how many resident rv64 machines fit, and what does
 //! aggregate round-robin throughput look like? Exercises the elastic
 //! Memory64 arena's premise that host VA tracks actual guest usage.
-use riscv_kernel_linux::MockLinux64;
-use riscv_vm::machine::Machine;
+use riscv_kernel_linux::{KernelXlen, MockLinux};
+use riscv_vm::hart::{X32, X64};
+use riscv_vm::machine::{Kernel, Machine};
 
 fn rss_mib() -> f64 {
     let s = std::fs::read_to_string("/proc/self/statm").unwrap();
@@ -12,22 +13,34 @@ fn rss_mib() -> f64 {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let path = args.next().expect("usage: density <rv64-elf> [n] [steps]");
+    let path = args.next().expect("usage: density <elf> [n] [steps]");
     let n: usize = args.next().map(|s| s.parse().unwrap()).unwrap_or(1000);
     let steps: u64 = args.next().map(|s| s.parse().unwrap()).unwrap_or(10_000);
     let elf = std::fs::read(&path).expect("Failed to read ELF file");
 
+    match elf.get(4) {
+        Some(1) => run::<X32>(&elf, n, steps),
+        Some(2) => run::<X64>(&elf, n, steps),
+        other => panic!("unrecognized ELF class: {other:?}"),
+    }
+}
+
+fn run<X: KernelXlen>(elf: &[u8], n: usize, steps: u64)
+where
+    MockLinux<X>: Kernel<Xlen = X, Memory = X::Memory>,
+{
     let t0 = std::time::Instant::now();
     let mut machines: Vec<_> = (0..n)
         .map(|_| {
-            let mut m = Machine::new(MockLinux64::new(false));
+            let mut m = Machine::new(MockLinux::<X>::new(false));
             m.kernel
-                .load_static_elf(&mut m.hart, &mut m.mem, &elf, &[], &[]);
+                .load_static_elf(&mut m.hart, &mut m.mem, elf, &[], &[]);
             m
         })
         .collect();
     println!(
-        "created+loaded {n} rv64 machines in {:.1?} ({:.1}us each), rss={:.0} MiB",
+        "created+loaded {n} rv{} machines in {:.1?} ({:.1}us each), rss={:.0} MiB",
+        <X as riscv_vm::hart::Xlen>::BITS,
         t0.elapsed(),
         t0.elapsed().as_secs_f64() * 1e6 / n as f64,
         rss_mib()
