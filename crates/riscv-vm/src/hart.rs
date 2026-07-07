@@ -69,17 +69,44 @@ impl Hart32 {
         mem: &mut K::Memory,
         kernel: &mut K,
     ) -> Result<(), MachineError<K::Error>> {
-        // pc lives in a register; self.pc is stored per instruction but
-        // never reloaded.
+        // pc and the instruction count live in registers: self.pc is stored
+        // per instruction but never reloaded (a per-instruction RMW is a
+        // loop-carried dependence); inst_count is flushed before kernel
+        // entry and on exit, so the kernel always observes an exact count.
         let mut pc = self.pc;
-        loop {
+        let mut count = 0u64;
+        let result = loop {
             let inst = mem.load::<u32>(pc);
-            let op = Rv32IMASC::parse(inst).ok_or(HartError::InvalidInst { addr: pc, inst })?;
-            match self.exec_op_at(op, inst, pc, mem, kernel)? {
-                Exec::Next(next_pc) => pc = next_pc,
-                Exec::Halt => return Ok(()),
+            let Some(op) = Rv32IMASC::parse(inst) else {
+                break Err(HartError::InvalidInst { addr: pc, inst }.into());
+            };
+            match self.exec_op_at(op, inst, pc, mem) {
+                Ok(Exec::Next(next_pc)) => {
+                    count += 1;
+                    pc = next_pc;
+                }
+                Ok(trap) => {
+                    self.inst_count += count;
+                    count = 0;
+                    let res = match trap {
+                        Exec::Syscall => kernel.syscall(self, mem),
+                        _ => kernel.ebreak(self, mem),
+                    };
+                    match res {
+                        Ok(StepResult::Ok) => {
+                            count += 1;
+                            pc = pc.wrapping_add(if inst & 0b11 == 0b11 { 4 } else { 2 });
+                            self.pc = pc;
+                        }
+                        Ok(StepResult::Halt) => break Ok(()),
+                        Err(e) => break Err(e),
+                    }
+                }
+                Err(e) => break Err(e),
             }
-        }
+        };
+        self.inst_count += count;
+        result
     }
 
     #[inline(always)]
@@ -88,41 +115,39 @@ impl Hart32 {
         mem: &mut K::Memory,
         kernel: &mut K,
     ) -> Result<StepResult, MachineError<K::Error>> {
-        let inst = mem.load::<u32>(self.pc);
-        let op = Rv32IMASC::parse(inst).ok_or(HartError::InvalidInst {
-            addr: self.pc,
-            inst,
-        })?;
+        let pc = self.pc;
+        let inst = mem.load::<u32>(pc);
+        let op = Rv32IMASC::parse(inst).ok_or(HartError::InvalidInst { addr: pc, inst })?;
 
-        self.exec_op(op, inst, mem, kernel)
-    }
-
-    /// Execute an already-decoded instruction.
-    #[inline(always)]
-    fn exec_op<K: Kernel<Memory: Memory<Addr = u32>>>(
-        &mut self,
-        op: Rv32IMASC,
-        inst: u32,
-        mem: &mut K::Memory,
-        kernel: &mut K,
-    ) -> Result<StepResult, MachineError<K::Error>> {
-        match self.exec_op_at(op, inst, self.pc, mem, kernel)? {
-            Exec::Next(_) => Ok(StepResult::Ok),
-            Exec::Halt => Ok(StepResult::Halt),
+        match self.exec_op_at(op, inst, pc, mem)? {
+            Exec::Next(_) => {
+                self.inst_count += 1;
+                Ok(StepResult::Ok)
+            }
+            trap => {
+                let res = match trap {
+                    Exec::Syscall => kernel.syscall(self, mem)?,
+                    _ => kernel.ebreak(self, mem)?,
+                };
+                if let StepResult::Ok = res {
+                    self.inst_count += 1;
+                    self.pc = pc.wrapping_add(if inst & 0b11 == 0b11 { 4 } else { 2 });
+                }
+                Ok(res)
+            }
         }
     }
 
     /// Execute an already-decoded instruction at `pc`, returning the next
     /// pc. `self.pc` is updated on completion.
     #[inline(always)]
-    fn exec_op_at<K: Kernel<Memory: Memory<Addr = u32>>>(
+    fn exec_op_at<M: Memory<Addr = u32>, E: std::error::Error>(
         &mut self,
         op: Rv32IMASC,
         inst: u32,
         pc: u32,
-        mem: &mut K::Memory,
-        kernel: &mut K,
-    ) -> Result<Exec, MachineError<K::Error>> {
+        mem: &mut M,
+    ) -> Result<Exec, MachineError<E>> {
         let pc_inc = if inst & 0b11 == 0b11 { 4 } else { 2 };
         let mut next_pc = pc.wrapping_add(pc_inc);
 
@@ -172,9 +197,12 @@ impl Hart32 {
                 let $rs1 = reg!($inst.$rs1(inst));
                 let $rs2 = reg!($inst2.$rs2(inst));
                 let offset = $inst.imm(inst);
-                if $body {
-                    next_pc = pc.wrapping_add_signed(offset);
-                }
+                // Select, not branch: guest branch outcomes are data-driven.
+                next_pc = if $body {
+                    pc.wrapping_add_signed(offset)
+                } else {
+                    next_pc
+                };
             }};
         }
 
@@ -282,14 +310,8 @@ impl Hart32 {
             Rv32IMASC::And(and) => reg_reg_op!(|and.rs1, and.rs2| rs1 & rs2),
             Rv32IMASC::Fence(_) => {}
             Rv32IMASC::FenceI(_) => {}
-            Rv32IMASC::Ecall(_) => match kernel.syscall(self, mem)? {
-                StepResult::Ok => {}
-                StepResult::Halt => return Ok(Exec::Halt),
-            },
-            Rv32IMASC::Ebreak(_) => match kernel.ebreak(self, mem)? {
-                StepResult::Ok => {}
-                StepResult::Halt => return Ok(Exec::Halt),
-            },
+            Rv32IMASC::Ecall(_) => return Ok(Exec::Syscall),
+            Rv32IMASC::Ebreak(_) => return Ok(Exec::Ebreak),
             Rv32IMASC::Unimp(_) => {
                 return Err(HartError::IllegalInst {
                     addr: pc,
@@ -508,10 +530,7 @@ impl Hart32 {
                 next_pc = reg!(cjr.rs1(inst));
             }
             Rv32IMASC::CMv(cmv) => reg!(cmv.rd(inst), reg!(cmv.rs2(inst))),
-            Rv32IMASC::CEbreak(_) => match kernel.ebreak(self, mem)? {
-                StepResult::Ok => {}
-                StepResult::Halt => return Ok(Exec::Halt),
-            },
+            Rv32IMASC::CEbreak(_) => return Ok(Exec::Ebreak),
             Rv32IMASC::CJalr(cjalr) => {
                 reg!(Reg::Ra, next_pc);
                 next_pc = reg!(cjalr.rs1(inst));
@@ -529,7 +548,6 @@ impl Hart32 {
             }
         }
 
-        self.inst_count += 1;
         self.pc = next_pc;
 
         Ok(Exec::Next(next_pc))
@@ -537,11 +555,17 @@ impl Hart32 {
 }
 
 /// Outcome of executing one instruction via [`Hart32::exec_op_at`].
+///
+/// Kernel entry (ecall/ebreak) is signalled rather than handled so callers
+/// can flush register-held state (e.g. the instruction count) first; pc is
+/// not advanced for those variants.
 enum Exec {
     /// Continue at this pc.
     Next(u32),
-    /// The kernel halted the machine.
-    Halt,
+    /// An ecall; invoke [`Kernel::syscall`].
+    Syscall,
+    /// An ebreak / c.ebreak; invoke [`Kernel::ebreak`].
+    Ebreak,
 }
 
 impl Default for Hart32 {
