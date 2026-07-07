@@ -6,14 +6,14 @@ use syn::{Ident, LitInt};
 
 use crate::{
     isa::Isa,
-    lookup_tables::generate_lookup_table,
+    lookup_tables::{generate_lookup_table, generate_lookup_table32, DISC_INVALID, DISC_SLOW},
     opcode::{BitEnc, Opcode},
 };
 
 pub fn generate_opcode_parser(
     opcodes: &mut [Opcode],
     isa: Isa,
-) -> (Option<TokenStream>, TokenStream) {
+) -> (Option<TokenStream>, Option<TokenStream>, TokenStream) {
     let (mut compressed, mut uncompressed) =
         opcodes.iter_mut().partition::<Vec<_>, _>(|o| o.is_c());
 
@@ -39,16 +39,51 @@ pub fn generate_opcode_parser(
         Some(generate_lookup_table(&compressed))
     };
     let c_decode = if table.is_some() {
+        quote! {
+            unsafe { *Self::C_LOOKUP.get_unchecked(inst as u16 as usize) }
+        }
+    } else {
+        quote! { Self::DISC_INVALID }
+    };
+    let c_lookup_const = table.is_some().then(|| {
         let include_path = format!("./{isa}_lookup_table.rs");
         quote! {
             const C_LOOKUP: [u8; 0xFFFF] = include!(#include_path);
-
-            #[allow(clippy::missing_transmute_annotations)]
-            Some(unsafe { core::mem::transmute(*C_LOOKUP.get_unchecked(inst as u16 as usize)) })
+        }
+    });
+    let c_parse = if table.is_some() {
+        quote! {
+            let d = #c_decode;
+            Some(unsafe { core::mem::transmute(d) })
         }
     } else {
         quote! { None }
     };
+
+    let table32 = if uncompressed.is_empty() {
+        None
+    } else {
+        Some(generate_lookup_table32(&uncompressed))
+    };
+    let table32_decode = if table32.is_some() {
+        quote! {
+            unsafe { *Self::LOOKUP32.get_unchecked(Self::idx32(inst)) }
+        }
+    } else {
+        quote! { Self::DISC_INVALID }
+    };
+    let table32_const = table32.is_some().then(|| {
+        let include_path = format!("./{isa}_lookup_table32.rs");
+        quote! {
+            const LOOKUP32: [u8; 1 << 15] = include!(#include_path);
+
+            /// Flat decode-table index: opcode[6:2] | funct3 << 5 | funct7 << 8.
+            #[inline(always)]
+            const fn idx32(inst: u32) -> usize {
+                (((inst >> 2) & 0b11111) | (((inst >> 12) & 0b111) << 5) | (((inst >> 25) & 0b1111111) << 8)) as usize
+            }
+        }
+    });
 
     let tree = build_decision_tree(&uncompressed);
     let return_ty = isa.ident();
@@ -61,17 +96,49 @@ pub fn generate_opcode_parser(
     );
 
     let decode_fn = quote! {
+        /// Sentinel: no instruction matches (decode error).
+        pub const DISC_INVALID: u8 = #DISC_INVALID;
+        /// Sentinel: cell needs the decision-tree fallback ([`Self::parse_slow`]).
+        pub const DISC_SLOW: u8 = #DISC_SLOW;
+
+        #c_lookup_const
+        #table32_const
+
+        /// Decode to a raw discriminant (or `DISC_INVALID`/`DISC_SLOW`
+        /// sentinel) via the flat lookup tables, without constructing the
+        /// enum. Compressed instructions never yield a sentinel: unmatched
+        /// 16-bit patterns decode to discriminant 0 (`c.unimp`).
         #[inline(always)]
-        pub fn parse(inst: u32) -> Option<#return_ty> {
+        pub fn decode_disc(inst: u32) -> u8 {
             if inst & 0b11 != 0b11 {
                 #c_decode
             } else {
-                #parser
+                #table32_decode
             }
+        }
+
+        #[inline(always)]
+        #[allow(clippy::missing_transmute_annotations)]
+        pub fn parse(inst: u32) -> Option<#return_ty> {
+            if inst & 0b11 != 0b11 {
+                #c_parse
+            } else {
+                match #table32_decode {
+                    Self::DISC_INVALID => None,
+                    Self::DISC_SLOW => Self::parse_slow(inst),
+                    d => Some(unsafe { core::mem::transmute(d) }),
+                }
+            }
+        }
+
+        /// Decision-tree decode for 32-bit encodings whose fixed bits extend
+        /// beyond the opcode/funct3/funct7 table index (e.g. ecall/ebreak).
+        pub fn parse_slow(inst: u32) -> Option<#return_ty> {
+            #parser
         }
     };
 
-    (table, decode_fn)
+    (table, table32, decode_fn)
 }
 
 #[derive(Debug)]
