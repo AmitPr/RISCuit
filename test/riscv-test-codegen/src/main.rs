@@ -18,19 +18,17 @@ fn main() {
         }
 
         let test_name = path.file_name().unwrap().to_str().unwrap();
-        match test_name {
-            s if s.starts_with("rv32ua-p") => {}
-            s if s.starts_with("rv32uc-p") => {}
-            s if s.starts_with("rv32ui-p") => {}
-            s if s.starts_with("rv32um-p") => {}
+        let kernel = match test_name {
+            s if s.starts_with("rv32u") && s.contains("-p-") => quote! { MockLinux32 },
+            s if s.starts_with("rv64u") && s.contains("-p-") => quote! { MockLinux64 },
             _ => continue,
-        }
+        };
 
-        tests.push(generate_test_for_artifact(&path));
+        tests.push(generate_test_for_artifact(&path, kernel));
     }
     let output = syn::parse_quote! {
         #![cfg(test)]
-        use riscv_kernel_linux::MockLinux32;
+        use riscv_kernel_linux::{MockLinux32, MockLinux64};
         use riscv_vm::machine::Machine;
 
         #(#tests)*
@@ -41,7 +39,7 @@ fn main() {
     std::fs::write(output_file, prettyplease::unparse(&output)).unwrap();
 }
 
-fn generate_test_for_artifact(artifact: &Path) -> TokenStream {
+fn generate_test_for_artifact(artifact: &Path, kernel: TokenStream) -> TokenStream {
     let test_name = artifact
         .file_name()
         .unwrap()
@@ -57,7 +55,7 @@ fn generate_test_for_artifact(artifact: &Path) -> TokenStream {
         fn #test_name() {
             let program = include_bytes!(#program_file);
 
-            let mut machine = Machine::new(MockLinux32::default());
+            let mut machine = Machine::new(#kernel::default());
             machine.kernel.load_static_elf(&mut machine.hart, &mut machine.mem, program, &[], &[]);
             let res = machine.run();
             assert!(res.is_ok(), "Test failed: {}", res.unwrap_err());

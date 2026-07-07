@@ -223,18 +223,21 @@ impl<X: KernelXlen> MockLinux<X> {
         // Align and set brk
         self.brk = (brk + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
         self.brk_floor = self.brk;
-        // The image (and thus the initial break) must sit below the mmap
-        // region / stack reservation for this width's layout.
+        // Images that sit above the mmap region / stack reservation (e.g.
+        // bare-metal tests linked at 0x8000_0000) simply get no brk heap:
+        // growth is capped at the floor, so brk() always fails cleanly.
         let ceiling = if X::MMAP_GROWS_DOWN {
             X::MMAP_BASE
         } else {
             X::STACK_TOP - STACK_RESERVE
         };
-        assert!(
-            self.brk <= ceiling,
-            "ELF image (brk {:#x}) does not fit below the process layout ceiling {ceiling:#x}",
-            self.brk,
-        );
+        if self.brk > ceiling {
+            tracing::debug!(
+                "ELF image (brk {:#x}) is above the layout ceiling {ceiling:#x}; brk disabled",
+                self.brk
+            );
+            self.brk_limit = self.brk;
+        }
         // Global pointer is at __DATA_BEGIN__
         // TODO: Do we actually need to set this? Or does libc initialize it on its own?
         let data_begin = elf
