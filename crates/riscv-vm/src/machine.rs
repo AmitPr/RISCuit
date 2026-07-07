@@ -72,7 +72,8 @@ impl<K: Kernel<Memory: Memory<Addr = u32>>> Machine<K> {
 
     pub fn run(&mut self) -> Result<(), MachineError<K::Error>> {
         while self.state == MachineState::Running {
-            self.step()?;
+            self.hart.run(&mut self.mem, &mut self.kernel)?;
+            self.state = MachineState::Halted;
         }
 
         Ok(())
