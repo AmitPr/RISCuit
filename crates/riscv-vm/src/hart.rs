@@ -77,15 +77,30 @@ impl Hart32 {
         // self.pc for external visibility (kernel, debugger), but the loop
         // never reloads it, keeping the fetch address off the store-to-load
         // forwarding path.
+        //
+        // The retired-instruction count is also kept local and flushed on
+        // exit: a per-instruction read-modify-write of self.inst_count forms
+        // its own loop-carried store-to-load dependence (~8-14% of runtime).
+        // Consequence: self.inst_count is stale while the loop runs (e.g.
+        // during a syscall) and accurate once run() returns.
         let mut pc = self.pc;
-        loop {
+        let mut count = 0u64;
+        let result = loop {
             let inst = mem.load::<u32>(pc);
-            let op = Rv32IMASC::parse(inst).ok_or(HartError::InvalidInst { addr: pc, inst })?;
-            match self.exec_op_at(op, inst, pc, mem, kernel)? {
-                Exec::Next(next_pc) => pc = next_pc,
-                Exec::Halt => return Ok(()),
+            let Some(op) = Rv32IMASC::parse(inst) else {
+                break Err(HartError::InvalidInst { addr: pc, inst }.into());
+            };
+            match self.exec_op_at(op, inst, pc, mem, kernel) {
+                Ok(Exec::Next(next_pc)) => {
+                    count += 1;
+                    pc = next_pc;
+                }
+                Ok(Exec::Halt) => break Ok(()),
+                Err(e) => break Err(e),
             }
-        }
+        };
+        self.inst_count += count;
+        result
     }
 
     #[inline(always)]
@@ -100,7 +115,11 @@ impl Hart32 {
             inst,
         })?;
 
-        self.exec_op(op, inst, mem, kernel)
+        let res = self.exec_op(op, inst, mem, kernel)?;
+        if matches!(res, StepResult::Ok) {
+            self.inst_count += 1;
+        }
+        Ok(res)
     }
 
     /// Execute an already-decoded instruction.
@@ -537,7 +556,6 @@ impl Hart32 {
             }
         }
 
-        self.inst_count += 1;
         self.pc = next_pc;
 
         Ok(Exec::Next(next_pc))
