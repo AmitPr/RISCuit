@@ -103,9 +103,7 @@ impl Hart32 {
         self.exec_op(op, inst, mem, kernel)
     }
 
-    /// Execute an already-decoded instruction. When `op` is a compile-time
-    /// constant (as in the threaded dispatcher), the match below folds to a
-    /// single arm.
+    /// Execute an already-decoded instruction.
     #[inline(always)]
     fn exec_op<K: Kernel<Memory: Memory<Addr = u32>>>(
         &mut self,
@@ -121,9 +119,9 @@ impl Hart32 {
     }
 
     /// Like [`Self::exec_op`], but the current pc is passed (and the next pc
-    /// returned) by value so a threaded dispatcher can keep it in a register
-    /// across tail calls instead of round-tripping through memory.
-    /// `self.pc` is still updated on completion.
+    /// returned) by value so the run loop can keep it in a register instead
+    /// of round-tripping through memory. `self.pc` is still updated on
+    /// completion for kernel/debugger visibility.
     #[inline(always)]
     fn exec_op_at<K: Kernel<Memory: Memory<Addr = u32>>>(
         &mut self,
@@ -557,116 +555,5 @@ enum Exec {
 impl Default for Hart32 {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// Direct-threaded dispatch (nightly, `tco` feature): one handler function
-/// per instruction variant, chained with `become` so every handler's frame
-/// is reused (guaranteed tail calls) and every instruction type gets its own
-/// indirect dispatch site for the branch predictor.
-///
-/// Hot state (pc + current instruction word) is threaded through the tail
-/// calls as an argument so it lives in registers, not memory. The two u32s
-/// are packed into one u64 so all handler arguments (including the hidden
-/// sret pointer for the Result) fit in the six SysV integer registers.
-#[cfg(feature = "tco")]
-mod tco {
-    use super::*;
-
-    pub type Handler<K> = fn(
-        &mut Hart32,
-        &mut <K as Kernel>::Memory,
-        &mut K,
-        &Handlers<K>,
-        u64, // (pc << 32) | inst
-    ) -> Result<(), MachineError<<K as Kernel>::Error>>;
-
-    pub struct Handlers<K: Kernel<Memory: Memory<Addr = u32>>>(pub [Handler<K>; 256]);
-
-    #[inline(always)]
-    fn pack(pc: u32, inst: u32) -> u64 {
-        ((pc as u64) << 32) | inst as u64
-    }
-
-    /// Fetch + decode the next instruction and tail-call its handler.
-    /// A macro (not a function) so each handler owns its dispatch site.
-    macro_rules! dispatch_next {
-        ($hart:ident, $mem:ident, $kernel:ident, $tbl:ident, $next_pc:ident) => {{
-            let inst = $mem.load::<u32>($next_pc);
-            let d = Rv32IMASC::decode_disc(inst);
-            become $tbl.0[d as usize]($hart, $mem, $kernel, $tbl, pack($next_pc, inst))
-        }};
-    }
-
-    fn h_op<K: Kernel<Memory: Memory<Addr = u32>>, const D: u8>(
-        hart: &mut Hart32,
-        mem: &mut K::Memory,
-        kernel: &mut K,
-        tbl: &Handlers<K>,
-        pc_inst: u64,
-    ) -> Result<(), MachineError<K::Error>> {
-        let (pc, inst) = ((pc_inst >> 32) as u32, pc_inst as u32);
-        // Discriminants passed as D come from the generated for-each macro,
-        // so they are always valid variants.
-        let op: Rv32IMASC = unsafe { core::mem::transmute(D) };
-        match hart.exec_op_at(op, inst, pc, mem, kernel)? {
-            Exec::Halt => Ok(()),
-            Exec::Next(next_pc) => dispatch_next!(hart, mem, kernel, tbl, next_pc),
-        }
-    }
-
-    fn h_slow<K: Kernel<Memory: Memory<Addr = u32>>>(
-        hart: &mut Hart32,
-        mem: &mut K::Memory,
-        kernel: &mut K,
-        tbl: &Handlers<K>,
-        pc_inst: u64,
-    ) -> Result<(), MachineError<K::Error>> {
-        let (pc, inst) = ((pc_inst >> 32) as u32, pc_inst as u32);
-        let op = Rv32IMASC::parse_slow(inst).ok_or(HartError::InvalidInst { addr: pc, inst })?;
-        match hart.exec_op_at(op, inst, pc, mem, kernel)? {
-            Exec::Halt => Ok(()),
-            Exec::Next(next_pc) => dispatch_next!(hart, mem, kernel, tbl, next_pc),
-        }
-    }
-
-    fn h_invalid<K: Kernel<Memory: Memory<Addr = u32>>>(
-        _hart: &mut Hart32,
-        _mem: &mut K::Memory,
-        _kernel: &mut K,
-        _tbl: &Handlers<K>,
-        pc_inst: u64,
-    ) -> Result<(), MachineError<K::Error>> {
-        let (pc, inst) = ((pc_inst >> 32) as u32, pc_inst as u32);
-        Err(HartError::InvalidInst { addr: pc, inst }.into())
-    }
-
-    impl<K: Kernel<Memory: Memory<Addr = u32>>> Handlers<K> {
-        pub fn new() -> Self {
-            macro_rules! set_handlers {
-                ($(($name:ident, $d:literal)),*) => {{
-                    let mut t: [Handler<K>; 256] = [h_invalid::<K> as Handler<K>; 256];
-                    $( t[$d as usize] = h_op::<K, $d>; )*
-                    t[Rv32IMASC::DISC_SLOW as usize] = h_slow::<K>;
-                    t
-                }};
-            }
-            Handlers(riscv_inst::rv32imasc_for_each_op!(set_handlers))
-        }
-    }
-
-    impl Hart32 {
-        /// Run until halt/error using guaranteed-tail-call threaded dispatch.
-        pub fn run_threaded<K: Kernel<Memory: Memory<Addr = u32>>>(
-            &mut self,
-            mem: &mut K::Memory,
-            kernel: &mut K,
-        ) -> Result<(), MachineError<K::Error>> {
-            let tbl = Handlers::<K>::new();
-            let pc = self.pc;
-            let inst = mem.load::<u32>(pc);
-            let d = Rv32IMASC::decode_disc(inst);
-            (tbl.0[d as usize])(self, mem, kernel, &tbl, pack(pc, inst))
-        }
     }
 }

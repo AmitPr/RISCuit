@@ -3,10 +3,6 @@ name = "riscuit"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-# Direct-threaded interpreter (nightly only).
-tco = ["riscv-vm/tco"]
-
 [dependencies]
 riscv-vm.workspace = true
 riscv-kernel-linux.workspace = true

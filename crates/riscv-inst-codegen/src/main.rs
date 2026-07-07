@@ -272,30 +272,6 @@ fn generate_isa_enum(
 
     };
 
-    // A callback macro enumerating (VariantName, discriminant) pairs, so
-    // consumers (e.g. threaded interpreters) can generate per-variant code.
-    let for_each_ident = Ident::new(
-        &format!("{isa}_for_each_op"),
-        proc_macro2::Span::call_site(),
-    );
-    let discriminants = opcodes
-        .iter()
-        .map(|o| {
-            LitInt::new(
-                &format!("{}", o.discriminant.unwrap()),
-                proc_macro2::Span::call_site(),
-            )
-        })
-        .collect::<Vec<_>>();
-    let for_each = quote! {
-        #[macro_export]
-        macro_rules! #for_each_ident {
-            ($m:ident) => {
-                $m! { #((#names, #discriminants)),* }
-            };
-        }
-    };
-
     let isa_code = quote! {
         #[derive(Clone, Copy, PartialEq, Eq)]
         #[repr(u8)]
@@ -306,8 +282,6 @@ fn generate_isa_enum(
         impl #isa_ident {
             #decode_fn
         }
-
-        #for_each
 
         #(#opcode_structs)*
 
