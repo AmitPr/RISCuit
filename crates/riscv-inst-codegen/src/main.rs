@@ -290,7 +290,7 @@ fn generate_isa_enum(
     let for_each = quote! {
         #[macro_export]
         macro_rules! #for_each_ident {
-            ($m:path) => {
+            ($m:ident) => {
                 $m! { #((#names, #discriminants)),* }
             };
         }
