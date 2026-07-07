@@ -63,9 +63,7 @@ impl Hart32 {
 
     /// Run until the kernel halts the machine or an error occurs.
     ///
-    /// This is the hot path: inlining the step body into the loop lets the
-    /// compiler hoist the fetch/dispatch register pressure out of the
-    /// per-instruction path instead of paying a full spill/restore per call.
+    /// Looping over inlined [`step_inner`] prevents register spills.
     pub fn run<K: Kernel<Memory: Memory<Addr = u32>>>(
         &mut self,
         mem: &mut K::Memory,
