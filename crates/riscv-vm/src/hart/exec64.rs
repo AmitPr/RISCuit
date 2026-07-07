@@ -227,8 +227,9 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
                 .into());
             }
             let $old = load!(i32, addr) as u32;
-            reg!($inst.rd(inst), $old as i32 as i64);
+            // Read rs2 before writing rd: they may be the same register.
             let $rs2 = reg!($inst.rs2(inst)) as u32;
+            reg!($inst.rd(inst), $old as i32 as i64);
             store!(u32, addr, { $body } as u32);
         }};
     }
@@ -238,15 +239,16 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
             let addr = reg!($inst.rs1(inst));
             if addr & 7 != 0 {
                 fail!(MemoryError::UnalignedMemoryAccess {
-                    access: MemoryAccess::Load,
+                    access: MemoryAccess::Store,
                     addr,
                     required: 8,
                 }
                 .into());
             }
             let $old = load!(u64, addr);
-            reg!($inst.rd(inst), $old);
+            // Read rs2 before writing rd: they may be the same register.
             let $rs2 = reg!($inst.rs2(inst));
+            reg!($inst.rd(inst), $old);
             store!(u64, addr, { $body } as u64);
         }};
     }
@@ -262,7 +264,8 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
         }),
         Rv64IMASC::Jalr(jalr) => reg_imm_op!(|jalr.rs1, jalr.imm| {
             let res = next_pc;
-            next_pc = rs1.wrapping_add_signed(imm as i64);
+            // Indirect-jump targets drop bit 0 (spec: target = (rs1+imm) & !1).
+            next_pc = rs1.wrapping_add_signed(imm as i64) & !1;
             res
         }),
         Rv64IMASC::Beq(beq) => branch_op!(|beq.rs1, beq.rs2| rs1 == rs2),
@@ -667,13 +670,15 @@ fn exec_op_at<M: Memory<Addr = u64>, E: std::error::Error>(
             reg!(rd, reg!(rd) << cslli.shamt(inst));
         }
         Rv64IMASC::CJr(cjr) => {
-            next_pc = reg!(cjr.rs1(inst));
+            next_pc = reg!(cjr.rs1(inst)) & !1;
         }
         Rv64IMASC::CMv(cmv) => reg!(cmv.rd(inst), reg!(cmv.rs2(inst))),
         Rv64IMASC::CEbreak(_) => return Exec::Ebreak,
         Rv64IMASC::CJalr(cjalr) => {
+            // Read the target before writing ra: rs1 may be ra.
+            let target = reg!(cjalr.rs1(inst)) & !1;
             reg!(Reg::Ra, next_pc);
-            next_pc = reg!(cjalr.rs1(inst));
+            next_pc = target;
         }
         Rv64IMASC::CAdd(cadd) => {
             let rs1rd = cadd.rs1rd(inst);

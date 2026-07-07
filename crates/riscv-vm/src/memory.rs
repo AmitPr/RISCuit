@@ -8,12 +8,22 @@ mod _sealed {
 }
 pub use _sealed::Primitive;
 
+/// Types that may be viewed over raw guest bytes: every bit pattern must be
+/// a valid value and the type must be padding-free.
+///
+/// # Safety
+/// Implementing this for a type with invalid bit patterns (`bool`, most
+/// enums, references) or padding makes [`Memory::slice`]/[`Memory::copy_to`]
+/// unsound.
+pub unsafe trait Pod: Copy {}
+unsafe impl<T: Primitive + Copy> Pod for T {}
+
 use crate::error::{MemoryAccess, MemoryError};
 
 pub const PAGE_SIZE: usize = 4096;
 
 const fn page_align_up(v: u64) -> u64 {
-    (v + PAGE_SIZE as u64 - 1) & !(PAGE_SIZE as u64 - 1)
+    v.saturating_add(PAGE_SIZE as u64 - 1) & !(PAGE_SIZE as u64 - 1)
 }
 
 #[cold]
@@ -65,9 +75,9 @@ pub trait Memory {
         Ok(())
     }
 
-    /// View guest memory as a slice of `T`. The caller is responsible for
-    /// `T`'s validity for any bit pattern.
-    fn slice<T: Sized>(&self, addr: u64, len: u64) -> Result<&[T], MemoryError> {
+    /// View guest memory as a slice of `T`. Errors if the guest address is
+    /// not aligned for `T` on the host.
+    fn slice<T: Pod>(&self, addr: u64, len: u64) -> Result<&[T], MemoryError> {
         let bytes = len
             .checked_mul(std::mem::size_of::<T>() as u64)
             .ok_or(MemoryError::OverflowMemoryAccess {
@@ -76,13 +86,21 @@ pub trait Memory {
                 len: len.min(u32::MAX as u64) as u32,
             })?;
         let ptr = self.ptr_range(MemoryAccess::Load, addr, bytes)?;
+        if ptr as usize % std::mem::align_of::<T>() != 0 {
+            return Err(MemoryError::UnalignedMemoryAccess {
+                access: MemoryAccess::Load,
+                addr,
+                required: std::mem::align_of::<T>() as u32,
+            });
+        }
         Ok(unsafe { std::slice::from_raw_parts(ptr as *const T, len as usize) })
     }
 
-    fn copy_to<T: Sized>(&mut self, dst: u64, src: &[T]) -> Result<(), MemoryError> {
-        let bytes = std::mem::size_of_val(src) as u64;
-        let ptr = self.ptr_range(MemoryAccess::Store, dst, bytes)?;
-        unsafe { std::ptr::copy_nonoverlapping(src.as_ptr(), ptr as *mut T, src.len()) };
+    fn copy_to<T: Pod>(&mut self, dst: u64, src: &[T]) -> Result<(), MemoryError> {
+        let bytes = std::mem::size_of_val(src);
+        let ptr = self.ptr_range(MemoryAccess::Store, dst, bytes as u64)?;
+        // Byte-wise copy: the destination has no alignment guarantee.
+        unsafe { std::ptr::copy_nonoverlapping(src.as_ptr() as *const u8, ptr, bytes) };
         Ok(())
     }
 

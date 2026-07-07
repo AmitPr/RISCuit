@@ -57,6 +57,8 @@ pub struct MockLinux<X: KernelXlen> {
     passthrough_stdio: bool,
     /// Current program break.
     pub(crate) brk: u64,
+    /// brk may not shrink below the loaded image.
+    pub(crate) brk_floor: u64,
     /// brk may not reach this address (bottom of mmap region or stack).
     pub(crate) brk_limit: u64,
     /// Next anonymous mmap allocation position.
@@ -170,6 +172,7 @@ impl<X: KernelXlen> MockLinux<X> {
             exit_code: None,
             passthrough_stdio,
             brk: 0,
+            brk_floor: 0,
             brk_limit: if X::MMAP_GROWS_DOWN {
                 X::MMAP_BASE
             } else {
@@ -199,9 +202,15 @@ impl<X: KernelXlen> MockLinux<X> {
         for ph in &elf.program_headers {
             if ph.p_type == PT_LOAD {
                 let vaddr = ph.p_vaddr;
-                let end = vaddr + ph.p_memsz;
+                let end = vaddr
+                    .checked_add(ph.p_memsz)
+                    .expect("ELF segment address overflow");
                 mem.grow_to(end).expect("guest memory cap too small for ELF");
-                let file = &bytes[ph.p_offset as usize..(ph.p_offset + ph.p_filesz) as usize];
+                let file = ph
+                    .p_offset
+                    .checked_add(ph.p_filesz)
+                    .and_then(|e| bytes.get(ph.p_offset as usize..e as usize))
+                    .expect("ELF segment exceeds file");
                 mem.copy_to(vaddr, file).expect("Failed to copy segment");
                 // BSS is already zero: fresh arena pages are demand-zero.
                 brk = brk.max(end);
@@ -213,6 +222,19 @@ impl<X: KernelXlen> MockLinux<X> {
 
         // Align and set brk
         self.brk = (brk + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+        self.brk_floor = self.brk;
+        // The image (and thus the initial break) must sit below the mmap
+        // region / stack reservation for this width's layout.
+        let ceiling = if X::MMAP_GROWS_DOWN {
+            X::MMAP_BASE
+        } else {
+            X::STACK_TOP - STACK_RESERVE
+        };
+        assert!(
+            self.brk <= ceiling,
+            "ELF image (brk {:#x}) does not fit below the process layout ceiling {ceiling:#x}",
+            self.brk,
+        );
         // Global pointer is at __DATA_BEGIN__
         // TODO: Do we actually need to set this? Or does libc initialize it on its own?
         let data_begin = elf
@@ -229,31 +251,27 @@ impl<X: KernelXlen> MockLinux<X> {
         mem.grow_to(sp + PAGE_SIZE).expect("guest memory cap too small for stack");
         let mut stack_init: Vec<X::U> = vec![];
 
-        // Arguments
+        // String data goes high-to-low; the pointer arrays must stay in
+        // argv[0..n] order.
+        let mut place = |strings: &[&str], what: &str| -> Vec<u64> {
+            let mut ptrs = vec![0u64; strings.len()];
+            for (i, &st) in strings.iter().enumerate().rev() {
+                let bytes = CString::new(st).unwrap_or_else(|_| panic!("{what} contains null byte"));
+                let bytes = bytes.to_bytes_with_nul();
+                sp = (sp - bytes.len() as u64) & !(align - 1);
+                mem.copy_to(sp, bytes)
+                    .unwrap_or_else(|_| panic!("Failed to copy {what} to stack"));
+                ptrs[i] = sp;
+            }
+            ptrs
+        };
+        let argv = place(args, "argument");
+        let envp = place(env, "environment variable");
+
         stack_init.push(X::from_u64(args.len() as u64)); // argc
-        for &arg in args.iter().rev() {
-            let bytes = CString::new(arg).expect("argument contains null byte");
-            let bytes = bytes.to_bytes_with_nul();
-
-            sp = (sp - bytes.len() as u64) & !(align - 1);
-            mem.copy_to(sp, bytes)
-                .expect("Failed to copy argument to stack");
-
-            stack_init.push(X::from_u64(sp)); // pointer to arg
-        }
+        stack_init.extend(argv.into_iter().map(X::from_u64));
         stack_init.push(X::from_u64(0)); // argv NULL terminator
-
-        // Environment
-        for &e in env.iter().rev() {
-            let bytes = CString::new(e).expect("environment variable contains null byte");
-            let bytes = bytes.to_bytes_with_nul();
-
-            sp = (sp - bytes.len() as u64) & !(align - 1);
-            mem.copy_to(sp, bytes)
-                .expect("Failed to copy environment variable to stack");
-
-            stack_init.push(X::from_u64(sp));
-        }
+        stack_init.extend(envp.into_iter().map(X::from_u64));
         stack_init.push(X::from_u64(0)); // envp NULL terminator
 
         // ELF Auxillary Vector
@@ -270,8 +288,9 @@ impl<X: KernelXlen> MockLinux<X> {
         set_AT!(libc_riscv32::AT_ENTRY, elf.entry);
         set_AT!(libc_riscv32::AT_NULL, 0);
 
-        // Set up stack
+        // Set up stack. The psABI requires a 16-byte-aligned sp at entry.
         sp -= stack_init.len() as u64 * align;
+        sp &= !15;
 
         mem.copy_to(sp, &stack_init)
             .expect("Failed to copy stack data vector");

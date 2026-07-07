@@ -4,11 +4,39 @@
 //! dispatch) and return `Result<u64, errno>`; the dispatcher sign-truncates
 //! errno returns back to width. ABI structs that contain pointers/longs are
 //! parameterized by `X::U`.
-use std::ffi::{CStr, CString};
+use std::ffi::CString;
 
-use riscv_vm::memory::Memory;
+use riscv_vm::memory::{Memory, Pod};
 
 use crate::{KernelXlen, MockLinux, PAGE_SIZE};
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct IoVec<U> {
+    base: U,
+    len: U,
+}
+// Safety: width-sized integers only; any bit pattern valid, no padding.
+unsafe impl<U: Pod> Pod for IoVec<U> {}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct RLimit<U> {
+    rlim_cur: U,
+    rlim_max: U,
+}
+// Safety: as above.
+unsafe impl<U: Pod> Pod for RLimit<U> {}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct PollFd {
+    fd: i32,
+    events: i16,
+    revents: i16,
+}
+// Safety: integers only; any bit pattern valid, no padding.
+unsafe impl Pod for PollFd {}
 
 impl<X: KernelXlen> MockLinux<X> {
     pub(crate) fn ioctl(&mut self, _fd: i32, _request: u64) -> Result<u64, i32> {
@@ -27,9 +55,7 @@ impl<X: KernelXlen> MockLinux<X> {
         let pathname = mem
             .bytes_null_terminated(pathname, None)
             .map_err(|_| libc_riscv32::EINVAL)?;
-        let pathname = CStr::from_bytes_with_nul(pathname)
-            .map(|s| s.to_str().unwrap_or(""))
-            .map_err(|_| libc_riscv32::EINVAL)?;
+        let pathname = std::str::from_utf8(pathname).map_err(|_| libc_riscv32::EINVAL)?;
 
         match pathname {
             "/proc/self/exe" => {
@@ -89,11 +115,6 @@ impl<X: KernelXlen> MockLinux<X> {
         iov: u64,
         iovcnt: i32,
     ) -> Result<u64, i32> {
-        #[repr(C)]
-        struct IoVec<U> {
-            base: U,
-            len: U,
-        }
         if iovcnt < 0 {
             return Err(libc_riscv32::EINVAL);
         }
@@ -236,13 +257,13 @@ impl<X: KernelXlen> MockLinux<X> {
         }
 
         // brk may not grow into the mmap region (rv32 layout) or the stack
-        // reservation (rv64 layout).
+        // reservation (rv64 layout), nor shrink below the loaded image.
         let limit = if X::MMAP_GROWS_DOWN {
-            self.mmap_cursor
+            self.mmap_cursor.min(self.brk_limit)
         } else {
             self.brk_limit
         };
-        if new_brk >= limit {
+        if new_brk >= limit || new_brk < self.brk_floor {
             return Ok(old_brk);
         }
 
@@ -278,16 +299,20 @@ impl<X: KernelXlen> MockLinux<X> {
             "mmap: addr={addr:#x} len={len:#x} prot={_prot:#x} flags={_flags:#x} fd={fd} offset={_offset:#x}"
         );
 
-        let size = (len + (PAGE_SIZE - 1)) & !(PAGE_SIZE - 1);
-        if fd != -1 || size == 0 {
-            tracing::warn!("mmap: invalid fd or size");
-            return Err(libc_riscv32::MAP_FAILED);
+        let Some(size) = len.checked_add(PAGE_SIZE - 1).map(|l| l & !(PAGE_SIZE - 1)) else {
+            return Err(libc_riscv32::ENOMEM);
+        };
+        if fd != -1 {
+            tracing::warn!("mmap: file mappings not supported");
+            return Err(libc_riscv32::ENOSYS);
+        }
+        if size == 0 {
+            return Err(libc_riscv32::EINVAL);
         }
 
-        let map_addr = if addr != 0 {
-            // Align hint downwards
-            addr & !(PAGE_SIZE - 1)
-        } else if X::MMAP_GROWS_DOWN {
+        // Placement hints are advisory (POSIX): allocation always comes from
+        // the cursor, so hinted requests can never overlap the bump region.
+        let map_addr = if X::MMAP_GROWS_DOWN {
             self.mmap_cursor.saturating_sub(size) & !(PAGE_SIZE - 1)
         } else {
             self.mmap_cursor
@@ -295,17 +320,21 @@ impl<X: KernelXlen> MockLinux<X> {
 
         let Some(end) = map_addr.checked_add(size) else {
             tracing::warn!("mmap: address overflow");
-            return Err(libc_riscv32::MAP_FAILED);
+            return Err(libc_riscv32::ENOMEM);
         };
+
+        // The grows-down region bottoms out at the program break.
+        if X::MMAP_GROWS_DOWN && map_addr < self.brk {
+            tracing::warn!("mmap: region collided with brk");
+            return Err(libc_riscv32::ENOMEM);
+        }
 
         if mem.grow_to(end).is_err() {
             tracing::warn!("mmap: out of guest address space");
             return Err(libc_riscv32::ENOMEM);
         }
 
-        if addr == 0 {
-            self.mmap_cursor = if X::MMAP_GROWS_DOWN { map_addr } else { end };
-        }
+        self.mmap_cursor = if X::MMAP_GROWS_DOWN { map_addr } else { end };
 
         // Zero out the region
         mem.memset(map_addr, 0, size).map_err(|_| {
@@ -334,12 +363,6 @@ impl<X: KernelXlen> MockLinux<X> {
         resource: u32,
         rlim_ptr: u64,
     ) -> Result<u64, i32> {
-        #[repr(C)]
-        struct RLimit<U> {
-            rlim_cur: U,
-            rlim_max: U,
-        }
-
         // All-ones at width == RLIM_INFINITY.
         let infinity = X::from_i64(-1);
         let rlim = match resource {
@@ -407,12 +430,6 @@ impl<X: KernelXlen> MockLinux<X> {
         _sigmask: u64,
         _sigsetsize: u64,
     ) -> Result<u64, i32> {
-        #[repr(C)]
-        struct PollFd {
-            fd: i32,
-            events: i16,
-            revents: i16,
-        }
         // This method is called during CRT init for stdin/out/err
         let fds = mem
             .slice::<PollFd>(fds, nfds)

@@ -214,15 +214,16 @@ fn exec_op_at<M: Memory<Addr = u32>, E: std::error::Error>(
             let addr = reg!($inst.rs1(inst));
             if addr & 3 != 0 {
                 fail!(MemoryError::UnalignedMemoryAccess {
-                    access: MemoryAccess::Load,
+                    access: MemoryAccess::Store,
                     addr: addr as u64,
                     required: 4,
                 }
                 .into());
             }
             let $old = load!(u32, addr);
-            reg!($inst.rd(inst), $old);
+            // Read rs2 before writing rd: they may be the same register.
             let $rs2 = reg!($inst.rs2(inst));
+            reg!($inst.rd(inst), $old);
             store!(u32, addr, $body as u32);
         }};
     }
@@ -238,7 +239,8 @@ fn exec_op_at<M: Memory<Addr = u32>, E: std::error::Error>(
         }),
         Rv32IMASC::Jalr(jalr) => reg_imm_op!(|jalr.rs1, jalr.imm| {
             let res = next_pc;
-            next_pc = rs1.wrapping_add_signed(imm);
+            // Indirect-jump targets drop bit 0 (spec: target = (rs1+imm) & !1).
+            next_pc = rs1.wrapping_add_signed(imm) & !1;
             res
         }),
         Rv32IMASC::Beq(beq) => branch_op!(|beq.rs1, beq.rs2| rs1 == rs2),
@@ -505,13 +507,15 @@ fn exec_op_at<M: Memory<Addr = u32>, E: std::error::Error>(
             reg!(rd, reg!(rd) << cslli.shamt(inst));
         }
         Rv32IMASC::CJr(cjr) => {
-            next_pc = reg!(cjr.rs1(inst));
+            next_pc = reg!(cjr.rs1(inst)) & !1;
         }
         Rv32IMASC::CMv(cmv) => reg!(cmv.rd(inst), reg!(cmv.rs2(inst))),
         Rv32IMASC::CEbreak(_) => return Exec::Ebreak,
         Rv32IMASC::CJalr(cjalr) => {
+            // Read the target before writing ra: rs1 may be ra.
+            let target = reg!(cjalr.rs1(inst)) & !1;
             reg!(Reg::Ra, next_pc);
-            next_pc = reg!(cjalr.rs1(inst));
+            next_pc = target;
         }
         Rv32IMASC::CAdd(cadd) => {
             let rs1rd = cadd.rs1rd(inst);
