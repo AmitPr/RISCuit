@@ -212,10 +212,7 @@ fn generate_operand_accessor_fn(operand: &[String]) -> TokenStream {
 }
 
 fn group_by_isa(opcodes: Vec<Opcode>) -> HashMap<Isa, Vec<Opcode>> {
-    // First, group by extension. BTreeMap: iteration order decides
-    // discriminant assignment, so it must be deterministic -- a HashMap
-    // here reshuffled discriminants (and thus code layout) every codegen
-    // run, making builds unreproducible.
+    // Group by extension, BTreeMap for deterministic order.
     let mut by_ext: BTreeMap<String, Vec<Opcode>> = BTreeMap::new();
     for opcode in opcodes {
         for isa in &opcode.isas {
