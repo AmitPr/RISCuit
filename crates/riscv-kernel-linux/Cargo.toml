@@ -7,6 +7,6 @@ edition = "2021"
 riscv-vm.workspace = true
 goblin = "0.9.3"
 libc-riscv32.workspace = true
-syscalls = { version = "0.6.18", features = ["riscv32"] }
+syscalls = { version = "0.6.18", features = ["riscv32", "riscv64"] }
 tracing = "0.1.41"
 thiserror = "1.0"
