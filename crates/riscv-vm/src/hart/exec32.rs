@@ -6,7 +6,7 @@ use super::{mem_fault, take_err, Exec, Execute, Hart, X32};
 use crate::{
     error::{HartError, MachineError, MemoryAccess, MemoryError},
     machine::{Kernel, StepResult},
-    memory::Memory,
+    memory::{MemView, Memory},
 };
 
 impl Execute for X32 {
@@ -15,20 +15,22 @@ impl Execute for X32 {
         mem: &mut K::Memory,
         kernel: &mut K,
     ) -> Result<(), MachineError<K::Error>> {
-        // pc and the instruction count live in registers; both are flushed
-        // to the hart before kernel entry and on exit, so the kernel always
-        // observes an exact pc and count.
+        // pc, the instruction count, and the memory view live in registers;
+        // pc and count are flushed to the hart before kernel entry and on
+        // exit, and the view is re-snapshotted after any kernel call (which
+        // may grow, and so move, the arena).
         let mut pc = hart.pc;
         let mut count = 0u64;
         let mut err = None;
+        let mut view = mem.view();
         let result = loop {
-            let Ok(inst) = mem.load::<u32>(pc) else {
+            let Ok(inst) = view.load::<u32>(pc as u64) else {
                 break Err(mem_fault(MemoryAccess::Load, pc as u64));
             };
             let Some(op) = Rv32IMASC::parse(inst) else {
                 break Err(HartError::invalid(pc, inst).into());
             };
-            match exec_op_at(hart, op, inst, &mut pc, mem, &mut err) {
+            match exec_op_at(hart, op, inst, &mut pc, view, &mut err) {
                 Exec::Next => count += 1,
                 Exec::Error => break Err(take_err(&mut err)),
                 trap => {
@@ -39,6 +41,7 @@ impl Execute for X32 {
                         Exec::Syscall => kernel.syscall(hart, mem),
                         _ => kernel.ebreak(hart, mem),
                     };
+                    view = mem.view();
                     match res {
                         Ok(StepResult::Ok) => {
                             count += 1;
@@ -67,7 +70,7 @@ impl Execute for X32 {
         let op = Rv32IMASC::parse(inst).ok_or_else(|| HartError::invalid(pc, inst))?;
 
         let mut err = None;
-        match exec_op_at(hart, op, inst, &mut pc, mem, &mut err) {
+        match exec_op_at(hart, op, inst, &mut pc, mem.view(), &mut err) {
             Exec::Next => {
                 hart.pc = pc;
                 hart.inst_count += 1;
@@ -97,12 +100,12 @@ impl Execute for X32 {
 /// untouched. `hart.pc` is never written here: callers keep pc in a register
 /// and flush it at trap and exit boundaries.
 #[inline(always)]
-fn exec_op_at<M: Memory<Addr = u32>, E: std::error::Error>(
+fn exec_op_at<E: std::error::Error>(
     hart: &mut Hart<X32>,
     op: Rv32IMASC,
     inst: u32,
     pc: &mut u32,
-    mem: &mut M,
+    view: MemView,
     err: &mut Option<MachineError<E>>,
 ) -> Exec {
     let pc_out = pc;
@@ -123,7 +126,7 @@ fn exec_op_at<M: Memory<Addr = u32>, E: std::error::Error>(
     macro_rules! load {
         ($t:ty, $addr:expr) => {{
             let a = $addr;
-            match mem.load::<$t>(a) {
+            match view.load::<$t>(a as u64) {
                 Ok(v) => v,
                 Err(_) => fail!(mem_fault(MemoryAccess::Load, a as u64)),
             }
@@ -132,7 +135,7 @@ fn exec_op_at<M: Memory<Addr = u32>, E: std::error::Error>(
     macro_rules! store {
         ($t:ty, $addr:expr, $val:expr) => {{
             let a = $addr;
-            if mem.store::<$t>(a, $val).is_err() {
+            if view.store::<$t>(a as u64, $val).is_err() {
                 fail!(mem_fault(MemoryAccess::Store, a as u64));
             }
         }};

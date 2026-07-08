@@ -40,6 +40,45 @@ fn fault(access: MemoryAccess, addr: u64) -> MemoryError {
 #[derive(Debug, Clone, Copy)]
 pub struct Fault;
 
+/// A by-value snapshot of an arena's access window (base pointer + mapped
+/// top) for a run of hot accesses.
+///
+/// Accesses through `&self` methods reload both fields per access: guest
+/// stores go through a raw pointer the compiler cannot prove disjoint from
+/// the arena struct itself. A `Copy` snapshot lives in registers instead.
+///
+/// Anything that can grow (and so move) the arena -- `grow_to`, or any
+/// `&mut` use such as a kernel call -- invalidates a view; re-snapshot
+/// with [`Memory::view`] afterwards.
+#[derive(Clone, Copy)]
+pub struct MemView {
+    ptr: *mut u8,
+    /// Exclusive access limit; accesses at or beyond it fault.
+    mapped: u64,
+}
+
+impl MemView {
+    #[inline(always)]
+    pub fn load<T: Primitive>(self, addr: u64) -> Result<T, Fault> {
+        if addr >= self.mapped {
+            return Err(Fault);
+        }
+        // Safety: addr < mapped, and a primitive's overhang past `mapped`
+        // lands in the guard page.
+        Ok(unsafe { (self.ptr.add(addr as usize) as *const T).read_unaligned() })
+    }
+
+    #[inline(always)]
+    pub fn store<T: Primitive>(self, addr: u64, val: T) -> Result<(), Fault> {
+        if addr >= self.mapped {
+            return Err(Fault);
+        }
+        // Safety: see `load`.
+        unsafe { (self.ptr.add(addr as usize) as *mut T).write_unaligned(val) };
+        Ok(())
+    }
+}
+
 /// A guest physical memory arena.
 ///
 /// `Addr` is the guest address width. The hot `load`/`store` paths take it
@@ -49,6 +88,10 @@ pub trait Memory {
 
     fn load<T: Primitive>(&self, addr: Self::Addr) -> Result<T, Fault>;
     fn store<T: Primitive>(&mut self, addr: Self::Addr, val: T) -> Result<(), Fault>;
+
+    /// Snapshot the current access window; see [`MemView`] for the
+    /// invalidation contract.
+    fn view(&self) -> MemView;
 
     /// Configured cap on guest addresses (exclusive). Growth beyond this
     /// always fails.
@@ -167,6 +210,17 @@ impl Memory for Memory32 {
         Ok(())
     }
 
+    #[inline(always)]
+    fn view(&self) -> MemView {
+        // `mapped` is a constant the width of the guest space: after
+        // inlining, every `u32`-derived address compares below it and the
+        // view's limit check folds away, keeping rv32 accesses unchecked.
+        MemView {
+            ptr: self.ptr,
+            mapped: 1 << 32,
+        }
+    }
+
     fn max_addr(&self) -> u64 {
         1 << 32
     }
@@ -256,6 +310,14 @@ impl Memory for Memory64 {
         // Safety: see `load`.
         unsafe { (self.ptr.add(addr as usize) as *mut T).write_unaligned(val) };
         Ok(())
+    }
+
+    #[inline(always)]
+    fn view(&self) -> MemView {
+        MemView {
+            ptr: self.ptr,
+            mapped: self.mapped,
+        }
     }
 
     fn max_addr(&self) -> u64 {
