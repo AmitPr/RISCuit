@@ -1,2 +1,15 @@
 [env]
 CARGO_WORKSPACE_DIR = { value = "", relative = true }
+
+# Two x86-64 tunings the interpreter loop is sensitive to:
+# - Keep jumps off 32-byte boundaries (Intel JCC erratum: a jump touching
+#   one disables the uop cache for its line; an unlucky layout costs 2x on
+#   Skylake-family hosts).
+# - BMI2 for the single-`pext` decode index (+2-13% MIPS). Raises the CPU
+#   baseline to Haswell (2013). Drop `+bmi2` if targeting AMD Zen 1/2,
+#   where `pext` is microcoded and catastrophically slow.
+[target.'cfg(target_arch = "x86_64")']
+rustflags = [
+    "-C", "llvm-args=-x86-branches-within-32B-boundaries",
+    "-C", "target-feature=+bmi2",
+]
