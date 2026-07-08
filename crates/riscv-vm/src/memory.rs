@@ -121,13 +121,13 @@ pub trait Memory {
     /// View guest memory as a slice of `T`. Errors if the guest address is
     /// not aligned for `T` on the host.
     fn slice<T: Pod>(&self, addr: u64, len: u64) -> Result<&[T], MemoryError> {
-        let bytes = len
-            .checked_mul(std::mem::size_of::<T>() as u64)
-            .ok_or(MemoryError::OverflowMemoryAccess {
+        let bytes = len.checked_mul(std::mem::size_of::<T>() as u64).ok_or(
+            MemoryError::OverflowMemoryAccess {
                 access: MemoryAccess::Load,
                 addr,
                 len: len.min(u32::MAX as u64) as u32,
-            })?;
+            },
+        )?;
         let ptr = self.ptr_range(MemoryAccess::Load, addr, bytes)?;
         if ptr as usize % std::mem::align_of::<T>() != 0 {
             return Err(MemoryError::UnalignedMemoryAccess {
