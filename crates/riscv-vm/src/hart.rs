@@ -79,9 +79,7 @@ impl Hart32 {
         let mut view = mem.view();
         let result = loop {
             let inst = view.load::<u32>(pc);
-            let Some(op) = Rv32IMASC::parse(inst) else {
-                break Err(HartError::InvalidInst { addr: pc, inst }.into());
-            };
+            let op = Rv32IMASC::decode(inst);
             match self.exec_op_at(op, inst, pc, view) {
                 Ok(Exec::Next(next_pc)) => {
                     count += 1;
@@ -121,7 +119,7 @@ impl Hart32 {
     ) -> Result<StepResult, MachineError<K::Error>> {
         let pc = self.pc;
         let inst = mem.load::<u32>(pc);
-        let op = Rv32IMASC::parse(inst).ok_or(HartError::InvalidInst { addr: pc, inst })?;
+        let op = Rv32IMASC::decode(inst);
 
         match self.exec_op_at(op, inst, pc, mem.view())? {
             Exec::Next(next_pc) => {
@@ -248,7 +246,15 @@ impl Hart32 {
             }};
         }
 
+        // The sentinels dispatch through the same jump table as real ops.
+        // Slow diverts out of line: a dispatch back-edge here makes LLVM
+        // jump-thread the tree decode into the hot loop head (speculated
+        // compares and cmov-selected discriminants on every instruction).
         match op {
+            Rv32IMASC::Invalid => {
+                return Err(HartError::InvalidInst { addr: pc, inst }.into());
+            }
+            Rv32IMASC::Slow => return self.exec_slow(inst, pc, view),
             Rv32IMASC::Lui(lui) => imm_op!(|lui.imm| imm),
             Rv32IMASC::Auipc(auipc) => imm_op!(|auipc.imm| pc.wrapping_add_signed(imm)),
             Rv32IMASC::Jal(jal) => imm_op!(|jal.imm| {
@@ -543,6 +549,22 @@ impl Hart32 {
         }
 
         Ok(Exec::Next(next_pc))
+    }
+
+    /// Inlining this in the hot loop caused some LLVM codegen to blow-up,
+    /// so this is marked as cold and un-inlinable.
+    #[cold]
+    #[inline(never)]
+    fn exec_slow<E: std::error::Error>(
+        &mut self,
+        inst: u32,
+        pc: u32,
+        view: MemView,
+    ) -> Result<Exec, MachineError<E>> {
+        match Rv32IMASC::parse_slow(inst) {
+            Some(op) => self.exec_op_at(op, inst, pc, view),
+            None => Err(HartError::InvalidInst { addr: pc, inst }.into()),
+        }
     }
 }
 

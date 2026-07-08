@@ -6,7 +6,7 @@ use syn::{Ident, LitInt};
 
 use crate::{
     isa::Isa,
-    lookup_tables::{generate_lookup_table, generate_lookup_table32, DISC_INVALID, DISC_SLOW},
+    lookup_tables::{generate_lookup_table, generate_lookup_table32},
     opcode::{BitEnc, Opcode},
 };
 
@@ -33,6 +33,11 @@ pub fn generate_opcode_parser(
             }
         });
 
+    // The sentinels are real (fieldless) enum variants placed right after
+    // the last instruction, so the discriminant space stays dense and the
+    // exec jump table dispatches them like any other op.
+    let (disc_invalid, disc_slow) = sentinel_discs(&compressed, &uncompressed);
+
     let table = if compressed.is_empty() {
         None
     } else {
@@ -51,19 +56,14 @@ pub fn generate_opcode_parser(
             const C_LOOKUP: [u8; 0xFFFF] = include!(#include_path);
         }
     });
-    let c_parse = if table.is_some() {
-        quote! {
-            let d = #c_decode;
-            Some(unsafe { core::mem::transmute(d) })
-        }
-    } else {
-        quote! { None }
-    };
-
     let table32 = if uncompressed.is_empty() {
         None
     } else {
-        Some(generate_lookup_table32(&uncompressed))
+        Some(generate_lookup_table32(
+            &uncompressed,
+            disc_invalid,
+            disc_slow,
+        ))
     };
     let table32_decode = if table32.is_some() {
         quote! {
@@ -78,6 +78,20 @@ pub fn generate_opcode_parser(
             const LOOKUP32: [u8; 1 << 15] = include!(#include_path);
 
             /// Flat decode-table index: opcode[6:2] | funct3 << 5 | funct7 << 8.
+            ///
+            /// The index bits are exactly the set bits of 0xFE00_707C, so
+            /// with BMI2 one `pext` extracts and packs all three fields
+            /// (eleven shift/mask/or instructions otherwise). Compile-time
+            /// gated: enable with `-C target-feature=+bmi2` on hosts where
+            /// `pext` is fast (Intel Haswell+, AMD Zen 3+; earlier Zen
+            /// microcodes it catastrophically slowly).
+            #[cfg(all(target_arch = "x86_64", target_feature = "bmi2"))]
+            #[inline(always)]
+            fn idx32(inst: u32) -> usize {
+                // Safety: `pext` requires bmi2, guaranteed by the cfg gate.
+                unsafe { core::arch::x86_64::_pext_u32(inst, 0xFE00_707C) as usize }
+            }
+            #[cfg(not(all(target_arch = "x86_64", target_feature = "bmi2")))]
             #[inline(always)]
             const fn idx32(inst: u32) -> usize {
                 (((inst >> 2) & 0b11111) | (((inst >> 12) & 0b111) << 5) | (((inst >> 25) & 0b1111111) << 8)) as usize
@@ -96,10 +110,10 @@ pub fn generate_opcode_parser(
     );
 
     let decode_fn = quote! {
-        /// Sentinel: no instruction matches (decode error).
-        pub const DISC_INVALID: u8 = #DISC_INVALID;
-        /// Sentinel: cell needs the decision-tree fallback ([`Self::parse_slow`]).
-        pub const DISC_SLOW: u8 = #DISC_SLOW;
+        /// Discriminant of the [`Self::Invalid`] sentinel variant.
+        pub const DISC_INVALID: u8 = #disc_invalid;
+        /// Discriminant of the [`Self::Slow`] sentinel variant.
+        pub const DISC_SLOW: u8 = #disc_slow;
 
         #c_lookup_const
         #table32_const
@@ -117,28 +131,53 @@ pub fn generate_opcode_parser(
             }
         }
 
+        /// Decode via the flat tables to an always-valid variant, without
+        /// any sentinel range check: undecodable encodings are
+        /// [`Self::Invalid`] and cells the table cannot decide are
+        /// [`Self::Slow`] (resolve with [`Self::parse_slow`]). Dispatch
+        /// loops handle the sentinels as ordinary jump-table arms.
         #[inline(always)]
         #[allow(clippy::missing_transmute_annotations)]
+        pub fn decode(inst: u32) -> #return_ty {
+            // Safety: every table cell holds an instruction or sentinel
+            // discriminant, all of which are declared enum variants.
+            unsafe { core::mem::transmute(Self::decode_disc(inst)) }
+        }
+
+        #[inline(always)]
         pub fn parse(inst: u32) -> Option<#return_ty> {
-            if inst & 0b11 != 0b11 {
-                #c_parse
-            } else {
-                match #table32_decode {
-                    Self::DISC_INVALID => None,
-                    Self::DISC_SLOW => Self::parse_slow(inst),
-                    d => Some(unsafe { core::mem::transmute(d) }),
-                }
+            match Self::decode(inst) {
+                Self::Invalid => None,
+                Self::Slow => Self::parse_slow(inst),
+                op => Some(op),
             }
         }
 
         /// Decision-tree decode for 32-bit encodings whose fixed bits extend
         /// beyond the opcode/funct3/funct7 table index (e.g. ecall/ebreak).
+        ///
+        /// `#[inline]` so the symbol is local to the caller's codegen
+        /// unit (a direct call instead of one through a GOT register).
+        #[inline]
         pub fn parse_slow(inst: u32) -> Option<#return_ty> {
             #parser
         }
     };
 
     (table, table32, decode_fn)
+}
+
+/// Sentinel discriminants: the two values after the highest instruction
+/// discriminant (`Invalid`, then `Slow`).
+pub fn sentinel_discs(compressed: &[&mut Opcode], uncompressed: &[&mut Opcode]) -> (u8, u8) {
+    let max = compressed
+        .iter()
+        .chain(uncompressed.iter())
+        .map(|o| o.discriminant.unwrap())
+        .max()
+        .expect("ISA has no opcodes");
+    assert!(max <= u8::MAX - 2, "no discriminant room for sentinels");
+    (max + 1, max + 2)
 }
 
 #[derive(Debug)]

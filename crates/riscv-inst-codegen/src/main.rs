@@ -10,7 +10,11 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Ident, LitInt};
 
-use std::{collections::HashMap, io::Write, path::Path};
+use std::{
+    collections::{BTreeMap, HashMap},
+    io::Write,
+    path::Path,
+};
 
 pub fn mask(width: usize, shift: usize) -> LitInt {
     let mask: u64 = (1 << width) - 1;
@@ -208,8 +212,8 @@ fn generate_operand_accessor_fn(operand: &[String]) -> TokenStream {
 }
 
 fn group_by_isa(opcodes: Vec<Opcode>) -> HashMap<Isa, Vec<Opcode>> {
-    // First, group by extension
-    let mut by_ext: HashMap<String, Vec<Opcode>> = HashMap::new();
+    // Group by extension, BTreeMap for deterministic order.
+    let mut by_ext: BTreeMap<String, Vec<Opcode>> = BTreeMap::new();
     for opcode in opcodes {
         for isa in &opcode.isas {
             by_ext.entry(isa.clone()).or_default().push(opcode.clone());
@@ -245,6 +249,13 @@ fn generate_isa_enum(
 
     let isa_ident = isa.ident();
 
+    let max_disc = opcodes
+        .iter()
+        .map(|o| o.discriminant.unwrap())
+        .max()
+        .unwrap();
+    let (disc_invalid, disc_slow) = (max_disc + 1, max_disc + 2);
+
     let variants = opcodes.iter().map(Opcode::as_variant).collect::<Vec<_>>();
     let names = opcodes.iter().map(Opcode::name_ident).collect::<Vec<_>>();
 
@@ -257,7 +268,9 @@ fn generate_isa_enum(
             impl std::fmt::Debug for #isa_ident {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     match self {
-                        #( #isa_ident::#names(inst) => write!(f, "{inst:?}") ),*
+                        #( #isa_ident::#names(inst) => write!(f, "{inst:?}") ),*,
+                        #isa_ident::Invalid => write!(f, "invalid"),
+                        #isa_ident::Slow => write!(f, "slow"),
                     }
                 }
             }
@@ -265,7 +278,9 @@ fn generate_isa_enum(
             impl std::fmt::Display for #isa_ident {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     match self {
-                        #( #isa_ident::#names(inst) => write!(f, "{inst}") ),*
+                        #( #isa_ident::#names(inst) => write!(f, "{inst}") ),*,
+                        #isa_ident::Invalid => write!(f, "invalid"),
+                        #isa_ident::Slow => write!(f, "slow"),
                     }
                 }
             }
@@ -276,7 +291,11 @@ fn generate_isa_enum(
         #[derive(Clone, Copy, PartialEq, Eq)]
         #[repr(u8)]
         pub enum #isa_ident {
-            #(#variants),*
+            #(#variants),*,
+            /// Sentinel: no instruction decodes (see [`Self::decode`]).
+            Invalid = #disc_invalid,
+            /// Sentinel: needs [`Self::parse_slow`] (see [`Self::decode`]).
+            Slow = #disc_slow,
         }
 
         impl #isa_ident {
