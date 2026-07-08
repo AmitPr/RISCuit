@@ -1,2 +1,8 @@
 [env]
 CARGO_WORKSPACE_DIR = { value = "", relative = true }
+
+# Keep jumps off 32-byte boundaries (Intel JCC erratum: a jump touching one
+# disables the uop cache for its line). The interpreter loop is dense enough
+# that an unlucky layout costs 2x on Skylake-family hosts.
+[target.'cfg(target_arch = "x86_64")']
+rustflags = ["-C", "llvm-args=-x86-branches-within-32B-boundaries"]
