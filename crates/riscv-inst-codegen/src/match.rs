@@ -78,6 +78,20 @@ pub fn generate_opcode_parser(
             const LOOKUP32: [u8; 1 << 15] = include!(#include_path);
 
             /// Flat decode-table index: opcode[6:2] | funct3 << 5 | funct7 << 8.
+            ///
+            /// The index bits are exactly the set bits of 0xFE00_707C, so
+            /// with BMI2 one `pext` extracts and packs all three fields
+            /// (eleven shift/mask/or instructions otherwise). Compile-time
+            /// gated: enable with `-C target-feature=+bmi2` on hosts where
+            /// `pext` is fast (Intel Haswell+, AMD Zen 3+; earlier Zen
+            /// microcodes it catastrophically slowly).
+            #[cfg(all(target_arch = "x86_64", target_feature = "bmi2"))]
+            #[inline(always)]
+            fn idx32(inst: u32) -> usize {
+                // Safety: `pext` requires bmi2, guaranteed by the cfg gate.
+                unsafe { core::arch::x86_64::_pext_u32(inst, 0xFE00_707C) as usize }
+            }
+            #[cfg(not(all(target_arch = "x86_64", target_feature = "bmi2")))]
             #[inline(always)]
             const fn idx32(inst: u32) -> usize {
                 (((inst >> 2) & 0b11111) | (((inst >> 12) & 0b111) << 5) | (((inst >> 25) & 0b1111111) << 8)) as usize

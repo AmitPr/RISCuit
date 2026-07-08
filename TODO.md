@@ -14,14 +14,16 @@ came out of measurements or review in that work.
    registers" (fused loop +50%, pc-in-reg, local inst_count +10%,
    payload-free join +12%). Expected 1.5-3x; template JIT beyond that
    (qemu TCG is currently ~5x ahead on compute).
-2. **Memory64 limit check → MMU-enforced faults.** Measured: the check is
-   free on fetch but costs ~14% on load/store-heavy rv64 guests (mem64:
-   355 -> 411 MIPS with the check removed, matching rv32). Replace with a
-   PROT_NONE tail: reserve the configured max, `mprotect(RW)` on grow, and
-   translate SIGSEGV into the guest fault. Zero per-access cost, keeps
-   precise faults; costs reserved VA per hart (density dial: max window
-   size). 47-bit hosts fit ~2000 x 64 GiB reservations; la57 hosts 512x
-   more.
+2. ~~**Memory64 limit check -> MMU-enforced faults.**~~ Resolved without
+   MMU tricks: the check's real cost was the per-access reload of the
+   arena base and `mapped` (aliasing pessimism), not the predicted
+   branch. `MemView` keeps both in registers across the loop and mem64
+   now runs at or above the old no-check ablation. The PROT_NONE/SIGSEGV
+   design (reserve the configured max, `mprotect` on grow, signal ->
+   guest fault) stays documented as the fallback if a workload ever
+   surfaces the remaining ~2 inst/access, but it trades reserved VA per
+   hart and process-global signal state for a cost that no longer
+   measures.
 3. **RV64 W-instruction sext overhead** — measured +1.75 host inst/guest
    inst on identical instruction counts (alu: 588M vs 616M host insts per
    16M guest insts); explains the alu-class rv64 gap. Inherent to
@@ -42,13 +44,27 @@ came out of measurements or review in that work.
    libc needs gp at all) (pre-existing).
 8. Codegen `EXHAUSTIVE_MATCH_THRESHOLD` puzzle: manual `unreachable!()`
    arms measured slower than expected; pinned to 0 (pre-existing).
-9. Negative results, documented so they aren't re-tried blindly:
-   `become`-threaded dispatch (nightly TCO works; ~40% slower than the
-   fused loop on loop-heavy guests — single dispatch site is already
-   well-predicted; may still win on large irregular code, e.g. dhrystone),
-   branchless unified decode table (-25%: predicted branch beats a
-   serializing cmov), speculative next-fetch (neutral: OoO already does
-   it), `-C target-cpu=native` (neutral).
+9. **Code-layout roulette dominates the remaining micro-margins** on
+   Skylake-family hosts: per-guest wall MIPS swings +-5-20% between
+   builds from block placement alone (one hot arm's alignment can cost a
+   leg 20% with an identical instruction stream). The JCC-erratum padding
+   flag in `.cargo/config.toml` removes the worst 2x cliffs;
+   block-alignment hammers (`-align-all-nofallthru-blocks`) and
+   codegen-units/LTO changes just reroll the dice. Treat cachegrind
+   retired-instruction counts as the stable metric; PGO or predecoding
+   (fewer, bigger blocks) are the durable fixes if per-leg wall variance
+   ever matters.
+10. Negative results, documented so they aren't re-tried blindly:
+    `become`-threaded dispatch (nightly TCO works; ~40% slower than the
+    fused loop on loop-heavy guests — single dispatch site is already
+    well-predicted; may still win on large irregular code, e.g. dhrystone),
+    branchless unified decode table (-25%: predicted branch beats a
+    serializing cmov), a sentinel-dispatch back-edge (`Slow -> parse_slow
+    -> re-dispatch` loop makes LLVM jump-thread speculated tree decode
+    into the hot loop head, 4x regression; the cold out-of-line
+    `exec_slow` shape is the one that works), speculative next-fetch
+    (neutral: OoO already does it), `-C target-cpu=native` (neutral
+    before the explicit-`pext` decode index existed).
 
 ## Correctness / robustness
 
