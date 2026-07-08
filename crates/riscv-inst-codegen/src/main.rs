@@ -10,7 +10,11 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{Ident, LitInt};
 
-use std::{collections::HashMap, io::Write, path::Path};
+use std::{
+    collections::{BTreeMap, HashMap},
+    io::Write,
+    path::Path,
+};
 
 pub fn mask(width: usize, shift: usize) -> LitInt {
     let mask: u64 = (1 << width) - 1;
@@ -208,8 +212,11 @@ fn generate_operand_accessor_fn(operand: &[String]) -> TokenStream {
 }
 
 fn group_by_isa(opcodes: Vec<Opcode>) -> HashMap<Isa, Vec<Opcode>> {
-    // First, group by extension
-    let mut by_ext: HashMap<String, Vec<Opcode>> = HashMap::new();
+    // First, group by extension. BTreeMap: iteration order decides
+    // discriminant assignment, so it must be deterministic -- a HashMap
+    // here reshuffled discriminants (and thus code layout) every codegen
+    // run, making builds unreproducible.
+    let mut by_ext: BTreeMap<String, Vec<Opcode>> = BTreeMap::new();
     for opcode in opcodes {
         for isa in &opcode.isas {
             by_ext.entry(isa.clone()).or_default().push(opcode.clone());
