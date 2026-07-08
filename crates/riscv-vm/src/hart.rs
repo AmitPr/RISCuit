@@ -551,9 +551,8 @@ impl Hart32 {
         Ok(Exec::Next(next_pc))
     }
 
-    /// Tree-decode and execute an instruction the flat table could not
-    /// decide ([`Rv32IMASC::Slow`]). Cold and out of line: the private copy
-    /// of the dispatch this instantiates stays off the hot path.
+    /// Inlining this in the hot loop caused some LLVM codegen to blow-up,
+    /// so this is marked as cold and un-inlinable.
     #[cold]
     #[inline(never)]
     fn exec_slow<E: std::error::Error>(
