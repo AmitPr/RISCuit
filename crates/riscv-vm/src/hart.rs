@@ -3,7 +3,7 @@ use riscv_inst::{codegen::rv32imasc::Rv32IMASC, Reg};
 use crate::{
     error::{HartError, MachineError, MemoryAccess, MemoryError},
     machine::{Kernel, StepResult},
-    memory::Memory,
+    memory::{MemView, Memory},
 };
 
 /// A simple CPU for RV32I instructions
@@ -69,34 +69,37 @@ impl Hart32 {
         mem: &mut K::Memory,
         kernel: &mut K,
     ) -> Result<(), MachineError<K::Error>> {
-        // pc and the instruction count live in registers: self.pc is stored
-        // per instruction but never reloaded (a per-instruction RMW is a
-        // loop-carried dependence); inst_count is flushed before kernel
-        // entry and on exit, so the kernel always observes an exact count.
+        // pc, the instruction count, and the memory view live in registers;
+        // pc and count are flushed to the hart before kernel entry and on
+        // exit, so the kernel always observes exact values. The view's
+        // borrow of the arena is released across kernel calls (which take
+        // `&mut` memory) and re-taken after.
         let mut pc = self.pc;
         let mut count = 0u64;
+        let mut view = mem.view();
         let result = loop {
-            let inst = mem.load::<u32>(pc);
+            let inst = view.load::<u32>(pc);
             let Some(op) = Rv32IMASC::parse(inst) else {
                 break Err(HartError::InvalidInst { addr: pc, inst }.into());
             };
-            match self.exec_op_at(op, inst, pc, mem) {
+            match self.exec_op_at(op, inst, pc, view) {
                 Ok(Exec::Next(next_pc)) => {
                     count += 1;
                     pc = next_pc;
                 }
                 Ok(trap) => {
+                    self.pc = pc;
                     self.inst_count += count;
                     count = 0;
                     let res = match trap {
                         Exec::Syscall => kernel.syscall(self, mem),
                         _ => kernel.ebreak(self, mem),
                     };
+                    view = mem.view();
                     match res {
                         Ok(StepResult::Ok) => {
                             count += 1;
                             pc = pc.wrapping_add(if inst & 0b11 == 0b11 { 4 } else { 2 });
-                            self.pc = pc;
                         }
                         Ok(StepResult::Halt) => break Ok(()),
                         Err(e) => break Err(e),
@@ -105,6 +108,7 @@ impl Hart32 {
                 Err(e) => break Err(e),
             }
         };
+        self.pc = pc;
         self.inst_count += count;
         result
     }
@@ -119,8 +123,9 @@ impl Hart32 {
         let inst = mem.load::<u32>(pc);
         let op = Rv32IMASC::parse(inst).ok_or(HartError::InvalidInst { addr: pc, inst })?;
 
-        match self.exec_op_at(op, inst, pc, mem)? {
-            Exec::Next(_) => {
+        match self.exec_op_at(op, inst, pc, mem.view())? {
+            Exec::Next(next_pc) => {
+                self.pc = next_pc;
                 self.inst_count += 1;
                 Ok(StepResult::Ok)
             }
@@ -139,14 +144,15 @@ impl Hart32 {
     }
 
     /// Execute an already-decoded instruction at `pc`, returning the next
-    /// pc. `self.pc` is updated on completion.
+    /// pc. `self.pc` is not written here: callers keep pc in a register and
+    /// flush it at trap and exit boundaries.
     #[inline(always)]
-    fn exec_op_at<M: Memory<Addr = u32>, E: std::error::Error>(
+    fn exec_op_at<E: std::error::Error>(
         &mut self,
         op: Rv32IMASC,
         inst: u32,
         pc: u32,
-        mem: &mut M,
+        view: MemView,
     ) -> Result<Exec, MachineError<E>> {
         let pc_inc = if inst & 0b11 == 0b11 { 4 } else { 2 };
         let mut next_pc = pc.wrapping_add(pc_inc);
@@ -235,10 +241,10 @@ impl Hart32 {
                     }
                     .into());
                 }
-                let $old = mem.load::<u32>(addr);
+                let $old = view.load::<u32>(addr);
                 reg!($inst.rd(inst), $old);
                 let $rs2 = reg!($inst.rs2(inst));
-                mem.store::<u32>(addr, $body as u32);
+                view.store::<u32>(addr, $body as u32);
             }};
         }
 
@@ -262,28 +268,28 @@ impl Hart32 {
             Rv32IMASC::Bltu(bltu) => branch_op!(|bltu.rs1, bltu.rs2| rs1 < rs2),
             Rv32IMASC::Bgeu(bgeu) => branch_op!(|bgeu.rs1, bgeu.rs2| rs1 >= rs2),
             Rv32IMASC::Lb(lb) => reg_imm_op!(
-                |lb.rs1, lb.imm| mem.load::<i8>(rs1.wrapping_add_signed(imm)) as i32
+                |lb.rs1, lb.imm| view.load::<i8>(rs1.wrapping_add_signed(imm)) as i32
             ),
             Rv32IMASC::Lh(lh) => reg_imm_op!(
-                |lh.rs1, lh.imm| mem.load::<i16>(rs1.wrapping_add_signed(imm)) as i32
+                |lh.rs1, lh.imm| view.load::<i16>(rs1.wrapping_add_signed(imm)) as i32
             ),
             Rv32IMASC::Lw(lw) => reg_imm_op!(
-                |lw.rs1, lw.imm| mem.load::<u32>(rs1.wrapping_add_signed(imm))
+                |lw.rs1, lw.imm| view.load::<u32>(rs1.wrapping_add_signed(imm))
             ),
             Rv32IMASC::Lbu(lbu) => reg_imm_op!(
-                |lbu.rs1, lbu.imm| mem.load::<u8>(rs1.wrapping_add_signed(imm))
+                |lbu.rs1, lbu.imm| view.load::<u8>(rs1.wrapping_add_signed(imm))
             ),
             Rv32IMASC::Lhu(lhu) => reg_imm_op!(
-                |lhu.rs1, lhu.imm| mem.load::<u16>(rs1.wrapping_add_signed(imm))
+                |lhu.rs1, lhu.imm| view.load::<u16>(rs1.wrapping_add_signed(imm))
             ),
             Rv32IMASC::Sb(sb) => {
-                store_op!(|sb.rs1, sb.rs2, addr| mem.store::<u8>(addr, rs2 as u8))
+                store_op!(|sb.rs1, sb.rs2, addr| view.store::<u8>(addr, rs2 as u8))
             }
             Rv32IMASC::Sh(sh) => {
-                store_op!(|sh.rs1, sh.rs2, addr| mem.store::<u16>(addr, rs2 as u16))
+                store_op!(|sh.rs1, sh.rs2, addr| view.store::<u16>(addr, rs2 as u16))
             }
             Rv32IMASC::Sw(sw) => {
-                store_op!(|sw.rs1, sw.rs2, addr| mem.store::<u32>(addr, rs2))
+                store_op!(|sw.rs1, sw.rs2, addr| view.store::<u32>(addr, rs2))
             }
             Rv32IMASC::Addi(addi) => {
                 reg_imm_op!(|addi.rs1, addi.imm| rs1.wrapping_add_signed(imm))
@@ -312,13 +318,7 @@ impl Hart32 {
             Rv32IMASC::FenceI(_) => {}
             Rv32IMASC::Ecall(_) => return Ok(Exec::Syscall),
             Rv32IMASC::Ebreak(_) => return Ok(Exec::Ebreak),
-            Rv32IMASC::Unimp(_) => {
-                return Err(HartError::IllegalInst {
-                    addr: pc,
-                    inst,
-                }
-                .into())
-            }
+            Rv32IMASC::Unimp(_) => return Err(HartError::IllegalInst { addr: pc, inst }.into()),
             Rv32IMASC::Mul(mul) => reg_reg_op!(|mul.rs1, mul.rs2| rs1.wrapping_mul(rs2)),
             Rv32IMASC::Mulh(mulh) => reg_reg_op!(
                 |mulh.rs1, mulh.rs2| (rs1 as i32 as i64).wrapping_mul(rs2 as i32 as i64) >> 32
@@ -412,7 +412,7 @@ impl Hart32 {
                 // TODO: Not sure if this is how the spec defines the
                 // "reservation set" for lr/sc
                 self.amo_rsv = Some(addr);
-                reg!(lr_w.rd(inst), mem.load::<u32>(addr));
+                reg!(lr_w.rd(inst), view.load::<u32>(addr));
             }
             Rv32IMASC::ScW(sc_w) => {
                 let addr = reg!(sc_w.rs1(inst));
@@ -425,7 +425,7 @@ impl Hart32 {
                     .into());
                 }
                 if self.amo_rsv.take() == Some(addr) {
-                    mem.store::<u32>(addr, reg!(sc_w.rs2(inst)));
+                    view.store::<u32>(addr, reg!(sc_w.rs2(inst)));
                     reg!(sc_w.rd(inst), 0);
                 } else {
                     reg!(sc_w.rd(inst), 1);
@@ -447,11 +447,11 @@ impl Hart32 {
             }
             Rv32IMASC::CLw(lw) => {
                 let addr = reg!(lw.rs1(inst)).wrapping_add(lw.imm(inst));
-                reg!(lw.rd(inst), mem.load::<u32>(addr));
+                reg!(lw.rd(inst), view.load::<u32>(addr));
             }
             Rv32IMASC::CSw(sw) => {
                 let addr = reg!(sw.rs1(inst)).wrapping_add(sw.imm(inst));
-                mem.store::<u32>(addr, reg!(sw.rs2(inst)));
+                view.store::<u32>(addr, reg!(sw.rs2(inst)));
             }
             Rv32IMASC::CAddi(caddi) => {
                 let rs1rd = caddi.rs1rd(inst);
@@ -464,11 +464,11 @@ impl Hart32 {
             }
             Rv32IMASC::CLwsp(lwsp) => {
                 let addr = reg!(Reg::Sp).wrapping_add(lwsp.imm(inst));
-                reg!(lwsp.rd(inst), mem.load::<u32>(addr));
+                reg!(lwsp.rd(inst), view.load::<u32>(addr));
             }
             Rv32IMASC::CSwsp(swsp) => {
                 let addr = reg!(Reg::Sp).wrapping_add(swsp.imm(inst));
-                mem.store::<u32>(addr, reg!(swsp.rs2(inst)));
+                view.store::<u32>(addr, reg!(swsp.rs2(inst)));
             }
             Rv32IMASC::CNop(_) => {}
             Rv32IMASC::CJal(cjal) => {
@@ -539,16 +539,8 @@ impl Hart32 {
                 let rs1rd = cadd.rs1rd(inst);
                 reg!(rs1rd, reg!(rs1rd).wrapping_add(reg!(cadd.rs2(inst))));
             }
-            Rv32IMASC::CUnimp(_) => {
-                return Err(HartError::IllegalInst {
-                    addr: pc,
-                    inst,
-                }
-                .into())
-            }
+            Rv32IMASC::CUnimp(_) => return Err(HartError::IllegalInst { addr: pc, inst }.into()),
         }
-
-        self.pc = next_pc;
 
         Ok(Exec::Next(next_pc))
     }

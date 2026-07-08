@@ -8,6 +8,8 @@ mod _sealed {
 }
 use _sealed::Primitive;
 
+use std::marker::PhantomData;
+
 use crate::error::{MemoryAccess, MemoryError};
 
 pub const PAGE_SIZE: usize = 4096;
@@ -21,6 +23,46 @@ pub trait Memory {
     type Addr;
     fn load<T: Primitive>(&self, addr: Self::Addr) -> T;
     fn store<T: Primitive>(&mut self, addr: Self::Addr, val: T);
+
+    /// Snapshot the arena base for a run of hot accesses; see [`MemView`].
+    fn view(&mut self) -> MemView<'_>;
+}
+
+/// A by-value snapshot of the arena base for a run of hot accesses.
+///
+/// Accesses through `&self`/`&mut self` methods reload the base pointer per
+/// access: guest stores go through a raw pointer the compiler cannot prove
+/// disjoint from the arena struct itself, so the field is re-read after
+/// every store. A `Copy` snapshot lives in a register instead.
+///
+/// A view mutably borrows the arena for `'m` (compare
+/// [`std::cell::Cell::from_mut`]): anything that could invalidate the
+/// window -- mutating, dropping, or re-viewing the arena, or forming
+/// references over guest bytes through its methods -- cannot compile while
+/// a view is live, so a view never dangles. The view itself is a shared,
+/// `Copy` handle, which is sound because its accesses are raw-pointer
+/// reads and writes (free to alias) and it never hands out references;
+/// exclusivity is spent once, in [`Memory::view`]'s `&mut self`. The
+/// phantom only ties `'m` to the type, hence `&'m ()`. Run loops release
+/// the borrow across kernel calls and re-take it after.
+#[derive(Clone, Copy)]
+pub struct MemView<'m> {
+    ptr: *mut u8,
+    _mem: PhantomData<&'m ()>,
+}
+
+impl MemView<'_> {
+    #[inline(always)]
+    pub fn load<T: Primitive>(self, addr: u32) -> T {
+        // Safety: see `Memory32::load`.
+        unsafe { (self.ptr.add(addr as usize) as *const T).read_unaligned() }
+    }
+
+    #[inline(always)]
+    pub fn store<T: Primitive>(self, addr: u32, val: T) {
+        // Safety: see `Memory32::store`.
+        unsafe { (self.ptr.add(addr as usize) as *mut T).write_unaligned(val) }
+    }
 }
 
 /// A fully encompassing memory struct, using `mmap` to allocate
@@ -46,6 +88,14 @@ impl Memory for Memory32 {
         // Safety: Primitive types are guaranteed not to overflow the address space,
         // where `addr + size_of::<T>() < MEMORY_SIZE` is guaranteed.
         unsafe { (self.ptr.add(addr as usize) as *mut T).write_unaligned(val) }
+    }
+
+    #[inline(always)]
+    fn view(&mut self) -> MemView<'_> {
+        MemView {
+            ptr: self.ptr,
+            _mem: PhantomData,
+        }
     }
 }
 
