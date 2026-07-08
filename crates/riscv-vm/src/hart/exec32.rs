@@ -15,10 +15,9 @@ impl Execute for X32 {
         mem: &mut K::Memory,
         kernel: &mut K,
     ) -> Result<(), MachineError<K::Error>> {
-        // pc and the instruction count live in registers: hart.pc is stored
-        // per instruction but never reloaded (a per-instruction RMW is a
-        // loop-carried dependence); inst_count is flushed before kernel
-        // entry and on exit, so the kernel always observes an exact count.
+        // pc and the instruction count live in registers; both are flushed
+        // to the hart before kernel entry and on exit, so the kernel always
+        // observes an exact pc and count.
         let mut pc = hart.pc;
         let mut count = 0u64;
         let mut err = None;
@@ -33,6 +32,7 @@ impl Execute for X32 {
                 Exec::Next => count += 1,
                 Exec::Error => break Err(take_err(&mut err)),
                 trap => {
+                    hart.pc = pc;
                     hart.inst_count += count;
                     count = 0;
                     let res = match trap {
@@ -43,7 +43,6 @@ impl Execute for X32 {
                         Ok(StepResult::Ok) => {
                             count += 1;
                             pc = pc.wrapping_add(if inst & 0b11 == 0b11 { 4 } else { 2 });
-                            hart.pc = pc;
                         }
                         Ok(StepResult::Halt) => break Ok(()),
                         Err(e) => break Err(e),
@@ -51,6 +50,7 @@ impl Execute for X32 {
                 }
             }
         };
+        hart.pc = pc;
         hart.inst_count += count;
         result
     }
@@ -69,6 +69,7 @@ impl Execute for X32 {
         let mut err = None;
         match exec_op_at(hart, op, inst, &mut pc, mem, &mut err) {
             Exec::Next => {
+                hart.pc = pc;
                 hart.inst_count += 1;
                 Ok(StepResult::Ok)
             }
@@ -91,9 +92,10 @@ impl Execute for X32 {
 /// Execute an already-decoded instruction at `*pc`.
 ///
 /// On [`Exec::Next`], the next pc is written through `pc` (an out-parameter
-/// rather than an enum payload; see [`Exec`]) and `hart.pc` is updated. On
-/// [`Exec::Error`], the error is deposited in `err`. On the trap variants
-/// and on error, `*pc` and `hart.pc` are left untouched.
+/// rather than an enum payload; see [`Exec`]). On [`Exec::Error`], the error
+/// is deposited in `err`. On the trap variants and on error, `*pc` is left
+/// untouched. `hart.pc` is never written here: callers keep pc in a register
+/// and flush it at trap and exit boundaries.
 #[inline(always)]
 fn exec_op_at<M: Memory<Addr = u32>, E: std::error::Error>(
     hart: &mut Hart<X32>,
@@ -524,7 +526,6 @@ fn exec_op_at<M: Memory<Addr = u32>, E: std::error::Error>(
         Rv32IMASC::CUnimp(_) => fail!(HartError::illegal(pc, inst).into()),
     }
 
-    hart.pc = next_pc;
     *pc_out = next_pc;
 
     Exec::Next
