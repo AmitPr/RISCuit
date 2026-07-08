@@ -21,6 +21,35 @@ pub trait Memory {
     type Addr;
     fn load<T: Primitive>(&self, addr: Self::Addr) -> T;
     fn store<T: Primitive>(&mut self, addr: Self::Addr, val: T);
+
+    /// Snapshot the arena base for a run of hot accesses; see [`MemView`].
+    fn view(&self) -> MemView;
+}
+
+/// A by-value snapshot of the arena base for a run of hot accesses.
+///
+/// Accesses through `&self`/`&mut self` methods reload the base pointer per
+/// access: guest stores go through a raw pointer the compiler cannot prove
+/// disjoint from the arena struct itself, so the field is re-read after
+/// every store. A `Copy` snapshot lives in a register instead. The mapping
+/// never moves, so a view stays valid for the arena's lifetime.
+#[derive(Clone, Copy)]
+pub struct MemView {
+    ptr: *mut u8,
+}
+
+impl MemView {
+    #[inline(always)]
+    pub fn load<T: Primitive>(self, addr: u32) -> T {
+        // Safety: see `Memory32::load`.
+        unsafe { (self.ptr.add(addr as usize) as *const T).read_unaligned() }
+    }
+
+    #[inline(always)]
+    pub fn store<T: Primitive>(self, addr: u32, val: T) {
+        // Safety: see `Memory32::store`.
+        unsafe { (self.ptr.add(addr as usize) as *mut T).write_unaligned(val) }
+    }
 }
 
 /// A fully encompassing memory struct, using `mmap` to allocate
@@ -46,6 +75,11 @@ impl Memory for Memory32 {
         // Safety: Primitive types are guaranteed not to overflow the address space,
         // where `addr + size_of::<T>() < MEMORY_SIZE` is guaranteed.
         unsafe { (self.ptr.add(addr as usize) as *mut T).write_unaligned(val) }
+    }
+
+    #[inline(always)]
+    fn view(&self) -> MemView {
+        MemView { ptr: self.ptr }
     }
 }
 
