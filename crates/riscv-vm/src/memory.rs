@@ -8,6 +8,8 @@ mod _sealed {
 }
 use _sealed::Primitive;
 
+use std::marker::PhantomData;
+
 use crate::error::{MemoryAccess, MemoryError};
 
 pub const PAGE_SIZE: usize = 4096;
@@ -23,7 +25,7 @@ pub trait Memory {
     fn store<T: Primitive>(&mut self, addr: Self::Addr, val: T);
 
     /// Snapshot the arena base for a run of hot accesses; see [`MemView`].
-    fn view(&self) -> MemView;
+    fn view(&mut self) -> MemView<'_>;
 }
 
 /// A by-value snapshot of the arena base for a run of hot accesses.
@@ -31,14 +33,25 @@ pub trait Memory {
 /// Accesses through `&self`/`&mut self` methods reload the base pointer per
 /// access: guest stores go through a raw pointer the compiler cannot prove
 /// disjoint from the arena struct itself, so the field is re-read after
-/// every store. A `Copy` snapshot lives in a register instead. The mapping
-/// never moves, so a view stays valid for the arena's lifetime.
+/// every store. A `Copy` snapshot lives in a register instead.
+///
+/// A view mutably borrows the arena for `'m` (compare
+/// [`std::cell::Cell::from_mut`]): anything that could invalidate the
+/// window -- mutating, dropping, or re-viewing the arena, or forming
+/// references over guest bytes through its methods -- cannot compile while
+/// a view is live, so a view never dangles. The view itself is a shared,
+/// `Copy` handle, which is sound because its accesses are raw-pointer
+/// reads and writes (free to alias) and it never hands out references;
+/// exclusivity is spent once, in [`Memory::view`]'s `&mut self`. The
+/// phantom only ties `'m` to the type, hence `&'m ()`. Run loops release
+/// the borrow across kernel calls and re-take it after.
 #[derive(Clone, Copy)]
-pub struct MemView {
+pub struct MemView<'m> {
     ptr: *mut u8,
+    _mem: PhantomData<&'m ()>,
 }
 
-impl MemView {
+impl MemView<'_> {
     #[inline(always)]
     pub fn load<T: Primitive>(self, addr: u32) -> T {
         // Safety: see `Memory32::load`.
@@ -78,8 +91,11 @@ impl Memory for Memory32 {
     }
 
     #[inline(always)]
-    fn view(&self) -> MemView {
-        MemView { ptr: self.ptr }
+    fn view(&mut self) -> MemView<'_> {
+        MemView {
+            ptr: self.ptr,
+            _mem: PhantomData,
+        }
     }
 }
 

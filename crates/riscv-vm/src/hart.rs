@@ -71,11 +71,12 @@ impl Hart32 {
     ) -> Result<(), MachineError<K::Error>> {
         // pc, the instruction count, and the memory view live in registers;
         // pc and count are flushed to the hart before kernel entry and on
-        // exit, so the kernel always observes exact values. The arena base
-        // never moves, so one view snapshot serves the whole run.
+        // exit, so the kernel always observes exact values. The view's
+        // borrow of the arena is released across kernel calls (which take
+        // `&mut` memory) and re-taken after.
         let mut pc = self.pc;
         let mut count = 0u64;
-        let view = mem.view();
+        let mut view = mem.view();
         let result = loop {
             let inst = view.load::<u32>(pc);
             let Some(op) = Rv32IMASC::parse(inst) else {
@@ -94,6 +95,7 @@ impl Hart32 {
                         Exec::Syscall => kernel.syscall(self, mem),
                         _ => kernel.ebreak(self, mem),
                     };
+                    view = mem.view();
                     match res {
                         Ok(StepResult::Ok) => {
                             count += 1;
