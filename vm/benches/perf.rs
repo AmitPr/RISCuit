@@ -3,7 +3,7 @@ use std::path::Path;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use pprof::criterion::{Output, PProfProfiler};
 use rand::prelude::*;
-use riscv_kernel_linux::MockLinux;
+use riscv_kernel_linux::MockLinux32;
 use riscv_vm::machine::Machine;
 
 fn decode_setup() -> Vec<u32> {
@@ -28,16 +28,28 @@ fn decode_bench(c: &mut Criterion) {
             }
         })
     });
+    c.bench_function("decode_rv64imasc", |b| {
+        b.iter(|| {
+            for &inst in &corpus {
+                black_box(riscv_vm::riscv_inst::codegen::rv64imasc::Rv64IMASC::parse(
+                    black_box(inst),
+                ));
+            }
+        })
+    });
 }
 
 fn roundtrip_bench(c: &mut Criterion) {
     let file = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../riscv/roundtrip/target/riscv32imac-unknown-linux-musl/release/roundtrip");
-    let elf = std::fs::read(file).expect("Failed to read ELF file");
+    let Ok(elf) = std::fs::read(&file) else {
+        eprintln!("skipping roundtrip_bench: {} not built", file.display());
+        return;
+    };
 
     c.bench_function("roundtrip_e2e", |b| {
         b.iter(|| {
-            let mut machine = Machine::new(MockLinux::new(false));
+            let mut machine = Machine::new(MockLinux32::new(false));
             machine.kernel.load_static_elf(
                 &mut machine.hart,
                 &mut machine.mem,
@@ -53,11 +65,14 @@ fn roundtrip_bench(c: &mut Criterion) {
 fn roundtrip_setup_bench(c: &mut Criterion) {
     let file = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../riscv/roundtrip/target/riscv32imac-unknown-linux-musl/release/roundtrip");
-    let elf = std::fs::read(file).expect("Failed to read ELF file");
+    let Ok(elf) = std::fs::read(&file) else {
+        eprintln!("skipping roundtrip_setup_bench: {} not built", file.display());
+        return;
+    };
 
     c.bench_function("roundtrip_load", |b| {
         b.iter(|| {
-            let mut machine = Machine::new(MockLinux::new(false));
+            let mut machine = Machine::new(MockLinux32::new(false));
             machine.kernel.load_static_elf(
                 &mut machine.hart,
                 &mut machine.mem,
@@ -72,12 +87,15 @@ fn roundtrip_setup_bench(c: &mut Criterion) {
 fn roundtrip_exec_bench(c: &mut Criterion) {
     let file = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../riscv/roundtrip/target/riscv32imac-unknown-linux-musl/release/roundtrip");
-    let elf = std::fs::read(file).expect("Failed to read ELF file");
+    let Ok(elf) = std::fs::read(&file) else {
+        eprintln!("skipping roundtrip_exec_bench: {} not built", file.display());
+        return;
+    };
 
     c.bench_function("roundtrip_exec", |b| {
         b.iter_batched(
             || {
-                let mut machine = Machine::new(MockLinux::new(false));
+                let mut machine = Machine::new(MockLinux32::new(false));
                 machine.kernel.load_static_elf(
                     &mut machine.hart,
                     &mut machine.mem,
